@@ -1,15 +1,19 @@
 package com.wheelseye.devicegateway.infrastructure.netty;
 
 import java.util.Optional;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
 import com.wheelseye.devicegateway.application.services.DeviceSessionService;
 import com.wheelseye.devicegateway.application.services.TelemetryProcessingService;
 import com.wheelseye.devicegateway.domain.entities.DeviceSession;
 import com.wheelseye.devicegateway.domain.valueobjects.IMEI;
+import com.wheelseye.devicegateway.domain.valueobjects.Location;
 import com.wheelseye.devicegateway.domain.valueobjects.MessageFrame;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -18,14 +22,14 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 
 /**
- * GT06 Handler - FIXED Authentication Issue
+ * GT06 Handler - COMPLETE FIX for Authentication and Location Processing
  * 
  * Key Fixes:
- * 1. ✅ Proper session authentication and persistence
- * 2. ✅ Session state properly saved after authentication
- * 3. ✅ Channel registration with ChannelRegistry  
- * 4. ✅ Enhanced session validation for location packets
- * 5. ✅ Better error handling and logging
+ * 1. ✅ Proper session authentication persistence
+ * 2. ✅ Enhanced location packet processing with detailed logging
+ * 3. ✅ Kafka-independent logging for debugging
+ * 4. ✅ Better error handling and validation
+ * 5. ✅ Channel registry integration
  */
 @Component
 @ChannelHandler.Sharable
@@ -72,8 +76,9 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                 return;
             }
 
-            logger.debug("📦 Received frame: protocol=0x{:02X}, serial={} from {}", 
-                       frame.getProtocolNumber(), frame.getSerialNumber(), ctx.channel().remoteAddress());
+            logger.debug("📦 Received frame: protocol=0x{:02X}, serial={}, length={} from {}", 
+                       frame.getProtocolNumber(), frame.getSerialNumber(), 
+                       frame.getContent().readableBytes(), ctx.channel().remoteAddress());
 
             // Process message based on protocol number
             processMessage(ctx, frame);
@@ -88,7 +93,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Process message based on protocol number - FIXED session handling
+     * Process message based on protocol number - ENHANCED with better logging
      */
     private void processMessage(ChannelHandlerContext ctx, MessageFrame frame) {
         int protocolNumber = frame.getProtocolNumber();
@@ -101,24 +106,25 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                     handleLogin(ctx, frame);
                 }
                 case 0x12, 0x22 -> {
-                    // Location (GPS) - requires authenticated session
-                    logger.debug("📍 Processing location from {}", ctx.channel().remoteAddress());
-                    handleLocationWithValidation(ctx, frame);
+                    // Location (GPS) - ENHANCED processing with detailed logging
+                    logger.info("📍 Processing location packet (0x{:02X}) from {}", 
+                              protocolNumber, ctx.channel().remoteAddress());
+                    handleLocationPacket(ctx, frame);
                 }
                 case 0x13 -> {
-                    // Status - requires session
+                    // Status
                     logger.debug("📊 Processing status from {}", ctx.channel().remoteAddress());
-                    handleStatusWithValidation(ctx, frame);
+                    handleStatusPacket(ctx, frame);
                 }
                 case 0x94 -> {
-                    // LBS Network - requires session
+                    // LBS Network
                     logger.debug("📶 Processing LBS from {}", ctx.channel().remoteAddress());
-                    handleLBSWithValidation(ctx, frame);
+                    handleLBSPacket(ctx, frame);
                 }
                 case 0x24 -> {
-                    // Vendor Multi - requires session
+                    // Vendor Multi
                     logger.debug("📦 Processing vendor-multi from {}", ctx.channel().remoteAddress());
-                    handleVendorMultiWithValidation(ctx, frame);
+                    handleVendorMultiPacket(ctx, frame);
                 }
                 case 0x23 -> {
                     // Heartbeat
@@ -141,7 +147,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Handle login message - FIXED to properly persist authentication
+     * Handle login message - FIXED authentication persistence
      */
     private void handleLogin(ChannelHandlerContext ctx, MessageFrame frame) {
         try {
@@ -158,11 +164,12 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             // Create or get existing session
             DeviceSession session = sessionService.createSession(imei, ctx.channel());
             
-            // CRITICAL FIX: Authenticate and save the session
+            // CRITICAL FIX: Authenticate and save the session properly
             session.authenticate();
-            sessionService.saveSession(session); // This was missing!
+            sessionService.saveSession(session);  // This was missing!
             
-            logger.info("✅ Session authenticated and saved for IMEI: {}", imei.getValue());
+            logger.info("✅ Session authenticated and saved for IMEI: {} (Session ID: {})", 
+                       imei.getValue(), session.getId());
 
             // Send login ACK
             ByteBuf ack = protocolParser.buildLoginAck(frame.getSerialNumber());
@@ -187,43 +194,76 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Handle location with proper session validation - FIXED
+     * Handle location packet - ENHANCED with detailed logging and Kafka-independent processing
      */
-    private void handleLocationWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+    private void handleLocationPacket(ChannelHandlerContext ctx, MessageFrame frame) {
+        // Get authenticated session
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
         
         if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No authenticated session found for location from {}", 
+            logger.warn("❌ No authenticated session found for location from {} - rejecting packet", 
                       ctx.channel().remoteAddress());
             return;
         }
 
         try {
             DeviceSession session = sessionOpt.get();
-            logger.debug("✅ Processing location for authenticated IMEI: {}", 
-                       session.getImei().getValue());
+            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
             
-            // Process location data
-            telemetryService.processLocationMessage(session, frame);
+            logger.info("✅ Processing location for authenticated IMEI: {}", imei);
+            
+            // Parse location data directly for logging (even if Kafka fails)
+            Location location = protocolParser.parseLocation(frame);
+            if (location != null) {
+                // LOG LOCATION DATA IMMEDIATELY (Kafka-independent)
+                logger.info("📍 Location received - IMEI: {}, Lat: {:.6f}, Lon: {:.6f}, Speed: {:.1f} km/h, Valid: {}, Time: {}", 
+                          imei, 
+                          location.getLatitude(), 
+                          location.getLongitude(), 
+                          location.getSpeed(),
+                          location.isValid() ? "GPS" : "Invalid",
+                          location.getTimestamp());
+                          
+                // Additional detailed logging
+                logger.debug("📍 Location details - IMEI: {}, Altitude: {:.1f}m, Heading: {:.1f}°, Satellites: {}", 
+                           imei,
+                           location.getAltitude(),
+                           location.getCourse(),
+                           location.getSatellites());
+            } else {
+                logger.warn("❌ Failed to parse location data for IMEI: {}", imei);
+            }
+            
+            // Try to process through telemetry service (may use Kafka)
+            try {
+                telemetryService.processLocationMessage(session, frame);
+                logger.debug("✅ Location sent to telemetry service for IMEI: {}", imei);
+            } catch (Exception kafkaError) {
+                // Don't fail if Kafka is down - we've already logged the location
+                logger.warn("⚠️ Telemetry service failed for IMEI: {} (Kafka issue?): {}", 
+                          imei, kafkaError.getMessage());
+            }
             
             // Update session activity and save
             session.updateActivity();
             sessionService.saveSession(session);
             
-            // Send ACK
+            // Send ACK to device
             sendGenericAck(ctx, frame);
+            logger.debug("📤 Location ACK sent to IMEI: {}", imei);
             
         } catch (Exception e) {
             logger.error("💥 Error handling location from {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
+            // Still send ACK to keep device happy
             sendGenericAck(ctx, frame);
         }
     }
 
     /**
-     * Handle status with validation - FIXED
+     * Handle status packet - ENHANCED
      */
-    private void handleStatusWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+    private void handleStatusPacket(ChannelHandlerContext ctx, MessageFrame frame) {
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
         
         if (sessionOpt.isEmpty()) {
@@ -234,9 +274,17 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
 
         try {
             DeviceSession session = sessionOpt.get();
+            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+            
+            logger.debug("📊 Processing status for IMEI: {}", imei);
             
             // Process status data
-            telemetryService.processStatusMessage(session, frame);
+            try {
+                telemetryService.processStatusMessage(session, frame);
+                logger.debug("✅ Status processed for IMEI: {}", imei);
+            } catch (Exception e) {
+                logger.warn("⚠️ Status processing failed for IMEI: {}: {}", imei, e.getMessage());
+            }
             
             // Update session activity and save
             session.updateActivity();
@@ -253,9 +301,9 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Handle LBS with validation - FIXED
+     * Handle LBS packet - ENHANCED
      */
-    private void handleLBSWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+    private void handleLBSPacket(ChannelHandlerContext ctx, MessageFrame frame) {
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
         
         if (sessionOpt.isEmpty()) {
@@ -266,9 +314,17 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
 
         try {
             DeviceSession session = sessionOpt.get();
+            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+            
+            logger.debug("📶 Processing LBS for IMEI: {}", imei);
             
             // Process LBS data  
-            telemetryService.processLBSMessage(session, frame);
+            try {
+                telemetryService.processLBSMessage(session, frame);
+                logger.debug("✅ LBS processed for IMEI: {}", imei);
+            } catch (Exception e) {
+                logger.warn("⚠️ LBS processing failed for IMEI: {}: {}", imei, e.getMessage());
+            }
             
             // Update session activity and save
             session.updateActivity();
@@ -285,9 +341,9 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Handle vendor multi with validation - FIXED
+     * Handle vendor multi packet - ENHANCED
      */
-    private void handleVendorMultiWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+    private void handleVendorMultiPacket(ChannelHandlerContext ctx, MessageFrame frame) {
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
         
         if (sessionOpt.isEmpty()) {
@@ -298,9 +354,17 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
 
         try {
             DeviceSession session = sessionOpt.get();
+            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+            
+            logger.debug("📦 Processing vendor-multi for IMEI: {}", imei);
             
             // Process vendor-specific multi-record data
-            telemetryService.processVendorMultiMessage(session, frame);
+            try {
+                telemetryService.processVendorMultiMessage(session, frame);
+                logger.debug("✅ Vendor-multi processed for IMEI: {}", imei);
+            } catch (Exception e) {
+                logger.warn("⚠️ Vendor-multi processing failed for IMEI: {}: {}", imei, e.getMessage());
+            }
             
             // Update session activity and save
             session.updateActivity();
@@ -328,8 +392,10 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             session.updateActivity();
             sessionService.saveSession(session);
             
-            logger.debug("💓 Heartbeat from IMEI: {}", 
-                       session.getImei() != null ? session.getImei().getValue() : "unknown");
+            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+            logger.debug("💓 Heartbeat from IMEI: {}", imei);
+        } else {
+            logger.debug("💓 Heartbeat from unknown session: {}", ctx.channel().remoteAddress());
         }
         
         // Always send heartbeat ACK
@@ -337,7 +403,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Get authenticated session with enhanced validation - NEW METHOD
+     * Get authenticated session with enhanced validation and logging
      */
     private Optional<DeviceSession> getAuthenticatedSession(ChannelHandlerContext ctx) {
         try {
@@ -345,21 +411,22 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
             
             if (sessionOpt.isEmpty()) {
-                logger.debug("📭 No session found for channel: {}", ctx.channel().id().asShortText());
+                logger.debug("📭 No session found for channel: {} from {}", 
+                           ctx.channel().id().asShortText(), ctx.channel().remoteAddress());
                 return Optional.empty();
             }
             
             DeviceSession session = sessionOpt.get();
+            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
             
             if (!session.isAuthenticated()) {
-                logger.warn("🔐 Session exists but not authenticated for IMEI: {} from {}", 
-                          session.getImei() != null ? session.getImei().getValue() : "unknown",
-                          ctx.channel().remoteAddress());
+                logger.warn("🔐 Session exists but NOT authenticated for IMEI: {} from {} - Session ID: {}", 
+                          imei, ctx.channel().remoteAddress(), session.getId());
                 return Optional.empty();
             }
             
-            logger.debug("✅ Found authenticated session for IMEI: {}", 
-                       session.getImei() != null ? session.getImei().getValue() : "unknown");
+            logger.debug("✅ Found authenticated session for IMEI: {} (Session ID: {})", 
+                       imei, session.getId());
             
             return sessionOpt;
             
@@ -371,21 +438,23 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Send generic ACK response
+     * Send generic ACK response with enhanced logging
      */
     private void sendGenericAck(ChannelHandlerContext ctx, MessageFrame frame) {
         try {
             ByteBuf ack = protocolParser.buildGenericAck(frame.getProtocolNumber(), frame.getSerialNumber());
             ctx.writeAndFlush(ack).addListener(future -> {
                 if (future.isSuccess()) {
-                    logger.debug("📤 ACK sent for protocol 0x{:02X}", frame.getProtocolNumber());
+                    logger.debug("📤 ACK sent for protocol 0x{:02X}, serial {}", 
+                               frame.getProtocolNumber(), frame.getSerialNumber());
                 } else {
-                    logger.error("❌ Failed to send ACK: {}", 
+                    logger.error("❌ Failed to send ACK for protocol 0x{:02X}: {}", 
+                               frame.getProtocolNumber(),
                                future.cause() != null ? future.cause().getMessage() : "Unknown error");
                 }
             });
         } catch (Exception e) {
-            logger.error("💥 Error sending ACK to {}: {}", 
+            logger.error("💥 Error building/sending ACK to {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
         }
     }
