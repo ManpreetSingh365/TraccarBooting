@@ -1,18 +1,20 @@
 package com.wheelseye.devicegateway.infrastructure.netty;
 
-import com.wheelseye.devicegateway.domain.valueobjects.IMEI;
-import com.wheelseye.devicegateway.domain.valueobjects.Location;
-import com.wheelseye.devicegateway.domain.valueobjects.MessageFrame;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
+import com.wheelseye.devicegateway.domain.valueobjects.IMEI;
+import com.wheelseye.devicegateway.domain.valueobjects.Location;
+import com.wheelseye.devicegateway.domain.valueobjects.MessageFrame;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 
 @Component
 public class GT06ProtocolParser {
@@ -114,6 +116,8 @@ public class GT06ProtocolParser {
             // IMEI is 15 digits, so take first 15
             String imeiString = imeiBuilder.toString().substring(0, 15);
             
+            logger.info("Parsed IMEI: {}", imeiString);
+
             content.resetReaderIndex();
             return new IMEI(imeiString);
             
@@ -160,7 +164,13 @@ public class GT06ProtocolParser {
             
             content.resetReaderIndex();
             
-            return new Location(latitude, longitude, 0, speed, course, valid, timestamp, satellites);
+            // return new Location(latitude, longitude, 0, speed, course, valid, timestamp, satellites);
+
+            Location location = new Location(latitude, longitude, 0, speed, course, valid, timestamp, satellites);
+        
+            logger.info("Parsed Location: {}", location.toString());
+            
+            return location;
             
         } catch (Exception e) {
             logger.error("Failed to parse location from frame", e);

@@ -1,9 +1,10 @@
 spring:
   application:
     name: device-gateway-service
-  
+
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:device-gateway-consumer-group}
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -12,40 +13,36 @@ spring:
       enable-auto-commit: false
       properties:
         spring.json.trusted.packages: "com.wheelseye.devicegateway.domain.events"
+
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       acks: 1
       retries: 3
+
     listener:
       ack-mode: MANUAL_IMMEDIATE
-    
+
   redis:
-    host: ${REDIS_HOST:localhost}
+    host: ${REDIS_HOST:redis}
     port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:redis}
-    database: 0
-    jedis:
-      pool:
-        max-active: 10
-        max-idle: 5
-        min-idle: 2
+    password: ${REDIS_PASSWORD:}
 
 device-gateway:
   tcp:
     port: ${TCP_PORT:5023}
     boss-threads: 1
     worker-threads: 4
-  
+
   kafka:
     topics:
       device-sessions: device.sessions
       telemetry-inbound: telemetry.inbound
       commands-outbound: commands.outbound
-  
+
   session:
-    idle-timeout: 600 # seconds
-    cleanup-interval: 60 # seconds
+    idle-timeout: ${DEVICE_GATEWAY_SESSION_IDLE_TIMEOUT:600}
+    cleanup-interval: ${DEVICE_GATEWAY_SESSION_CLEANUP_INTERVAL:60}
 
 logging:
   level:

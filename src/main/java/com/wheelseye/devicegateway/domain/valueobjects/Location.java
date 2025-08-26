@@ -33,4 +33,18 @@ public class Location {
     public boolean isValid() { return valid; }
     public Instant getTimestamp() { return timestamp; }
     public int getSatellites() { return satellites; }
+
+    @Override
+    public String toString() {
+        return "Location{" +
+                "latitude=" + latitude +
+                ", longitude=" + longitude +
+                ", altitude=" + altitude +
+                ", speed=" + speed +
+                ", course=" + course +
+                ", valid=" + valid +
+                ", timestamp=" + timestamp +
+                ", satellites=" + satellites +
+                '}';
+    }
 }

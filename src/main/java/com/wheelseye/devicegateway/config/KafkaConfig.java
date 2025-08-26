@@ -25,10 +25,10 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 @EnableKafka
 public class KafkaConfig {
 
-    @Value("${spring.kafka.bootstrap-servers}")
+    @Value("${KAFKA_BOOTSTRAP_SERVERS}")
     private String bootstrapServers;
 
-    @Value("${spring.kafka.consumer.group-id}")
+    @Value("${KAFKA_CONSUMER_GROUP_ID}")
     private String consumerGroupId;
 
     @Bean
@@ -41,7 +41,6 @@ public class KafkaConfig {
         configProps.put(ProducerConfig.RETRIES_CONFIG, 3);
         configProps.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);
         configProps.put(ProducerConfig.LINGER_MS_CONFIG, 5);
-        
         return new DefaultKafkaProducerFactory<>(configProps);
     }
 
@@ -60,10 +59,8 @@ public class KafkaConfig {
         configProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         configProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         configProps.put(JsonDeserializer.TRUSTED_PACKAGES, "com.wheelseye.devicegateway.domain.events");
-        
         return new DefaultKafkaConsumerFactory<>(configProps);
     }
-
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory() {
@@ -74,5 +71,4 @@ public class KafkaConfig {
         factory.setAutoStartup(false);
         return factory;
     }
-
 }

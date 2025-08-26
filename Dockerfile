@@ -1,14 +1,14 @@
-# Use official OpenJDK image
+# Use official Eclipse Temurin OpenJDK 21 Alpine image
 FROM eclipse-temurin:21-jdk-alpine
 
-# Set working directory
+# Set working directory inside container
 WORKDIR /app
 
-# Copy built JAR from target folder
+# Copy the built jar from the host's target directory into the container
 COPY target/device-gateway-service-1.0.0-SNAPSHOT.jar app.jar
 
-# Expose app port
+# Expose port 8080 for Spring Boot application
 EXPOSE 8080
 
-# Run the application
-ENTRYPOINT ["java","-jar","app.jar"]
+# Run the Spring Boot application using java -jar
+ENTRYPOINT ["java", "-jar", "app.jar"]
