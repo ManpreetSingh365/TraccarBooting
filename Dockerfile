@@ -1,14 +1,13 @@
-# Use official Eclipse Temurin OpenJDK 21 Alpine image
-FROM eclipse-temurin:21-jdk-alpine
-
-# Set working directory inside container
+# Stage 1: build with Maven + JDK 21
+FROM maven:3.9.4-eclipse-temurin-21 AS build
 WORKDIR /app
+COPY . /app
+RUN mvn -DskipTests package
 
-# Copy the built jar from the host's target directory into the container
-COPY target/device-gateway-service-1.0.0-SNAPSHOT.jar app.jar
-
-# Expose port 8080 for Spring Boot application
+# Stage 2: runtime with Temurin 21
+FROM eclipse-temurin:21-jdk-alpine
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
-
-# Run the Spring Boot application using java -jar
-ENTRYPOINT ["java", "-jar", "app.jar"]
+EXPOSE 5023
+ENTRYPOINT ["java","-jar","app.jar"]
