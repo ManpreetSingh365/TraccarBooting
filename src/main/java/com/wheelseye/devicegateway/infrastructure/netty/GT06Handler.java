@@ -1,18 +1,15 @@
 package com.wheelseye.devicegateway.infrastructure.netty;
 
 import java.util.Optional;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
 import com.wheelseye.devicegateway.application.services.DeviceSessionService;
 import com.wheelseye.devicegateway.application.services.TelemetryProcessingService;
 import com.wheelseye.devicegateway.domain.entities.DeviceSession;
 import com.wheelseye.devicegateway.domain.valueobjects.IMEI;
 import com.wheelseye.devicegateway.domain.valueobjects.MessageFrame;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -21,14 +18,14 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 
 /**
- * GT06 Handler - Enhanced with ChannelRegistry integration
+ * GT06 Handler - FIXED Authentication Issue
  * 
- * Key Features:
- * 1. ✅ Registers channels with ChannelRegistry for command delivery
- * 2. ✅ Uses DeviceSessionService for session management  
- * 3. ✅ Enhanced logging with emojis
- * 4. ✅ Proper channel lifecycle management
- * 5. ✅ Modern Java 21 switch expressions
+ * Key Fixes:
+ * 1. ✅ Proper session authentication and persistence
+ * 2. ✅ Session state properly saved after authentication
+ * 3. ✅ Channel registration with ChannelRegistry  
+ * 4. ✅ Enhanced session validation for location packets
+ * 5. ✅ Better error handling and logging
  */
 @Component
 @ChannelHandler.Sharable
@@ -42,7 +39,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     @Autowired
     private TelemetryProcessingService telemetryService;
 
-    @Autowired
+    @Autowired 
     private GT06ProtocolParser protocolParser;
     
     @Autowired
@@ -57,7 +54,6 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         
         // Register channel with registry for command delivery
         channelRegistry.register(channelId, ctx.channel());
-        
         logger.debug("📝 Channel registered with registry: {}", channelId);
     }
 
@@ -69,21 +65,18 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         }
 
         try {
-            // Get session for this channel
-            Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
-            
-            // Parse the message frame
+            // Parse the message frame first
             MessageFrame frame = protocolParser.parseFrame(buffer);
             if (frame == null) {
                 logger.warn("❌ Failed to parse frame from {}", ctx.channel().remoteAddress());
                 return;
             }
 
-            // Update session activity if session exists
-            sessionOpt.ifPresent(DeviceSession::updateActivity);
+            logger.debug("📦 Received frame: protocol=0x{:02X}, serial={} from {}", 
+                       frame.getProtocolNumber(), frame.getSerialNumber(), ctx.channel().remoteAddress());
 
             // Process message based on protocol number
-            processMessage(ctx, frame, sessionOpt);
+            processMessage(ctx, frame);
 
         } catch (Exception e) {
             logger.error("💥 Error processing message from {}: {}", 
@@ -95,58 +88,60 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Process message based on protocol number using modern switch
+     * Process message based on protocol number - FIXED session handling
      */
-    private void processMessage(ChannelHandlerContext ctx, MessageFrame frame, Optional<DeviceSession> sessionOpt) {
+    private void processMessage(ChannelHandlerContext ctx, MessageFrame frame) {
         int protocolNumber = frame.getProtocolNumber();
         
         try {
             switch (protocolNumber) {
                 case 0x01 -> {
-                    // Login
+                    // Login - handle directly (creates session)
                     logger.info("🔐 Processing login from {}", ctx.channel().remoteAddress());
                     handleLogin(ctx, frame);
                 }
                 case 0x12, 0x22 -> {
-                    // Location (GPS)
+                    // Location (GPS) - requires authenticated session
                     logger.debug("📍 Processing location from {}", ctx.channel().remoteAddress());
-                    handleLocation(ctx, frame, sessionOpt);
+                    handleLocationWithValidation(ctx, frame);
                 }
                 case 0x13 -> {
-                    // Status
+                    // Status - requires session
                     logger.debug("📊 Processing status from {}", ctx.channel().remoteAddress());
-                    handleStatus(ctx, frame, sessionOpt);
+                    handleStatusWithValidation(ctx, frame);
                 }
                 case 0x94 -> {
-                    // LBS Network
+                    // LBS Network - requires session
                     logger.debug("📶 Processing LBS from {}", ctx.channel().remoteAddress());
-                    handleLBSNetwork(ctx, frame, sessionOpt);
+                    handleLBSWithValidation(ctx, frame);
                 }
                 case 0x24 -> {
-                    // Vendor Multi
+                    // Vendor Multi - requires session
                     logger.debug("📦 Processing vendor-multi from {}", ctx.channel().remoteAddress());
-                    handleVendorMulti(ctx, frame, sessionOpt);
+                    handleVendorMultiWithValidation(ctx, frame);
                 }
-                case 0x8A -> {
-                    // Command Response
-                    logger.debug("📤 Processing command response from {}", ctx.channel().remoteAddress());
-                    handleCommandResponse(ctx, frame, sessionOpt);
+                case 0x23 -> {
+                    // Heartbeat
+                    logger.debug("💓 Processing heartbeat from {}", ctx.channel().remoteAddress());
+                    handleHeartbeat(ctx, frame);
                 }
                 default -> {
                     logger.warn("❓ Unknown protocol number: 0x{:02X} from {}", 
                               protocolNumber, ctx.channel().remoteAddress());
-                    // Still try to send ACK for unknown messages
+                    // Still send ACK for unknown messages
                     sendGenericAck(ctx, frame);
                 }
             }
         } catch (Exception e) {
             logger.error("💥 Error processing protocol 0x{:02X} from {}: {}", 
                        protocolNumber, ctx.channel().remoteAddress(), e.getMessage(), e);
+            // Always try to send ACK even on error
+            sendGenericAck(ctx, frame);
         }
     }
 
     /**
-     * Handle login message
+     * Handle login message - FIXED to properly persist authentication
      */
     private void handleLogin(ChannelHandlerContext ctx, MessageFrame frame) {
         try {
@@ -160,13 +155,14 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
 
             logger.info("🔐 Login request from IMEI: {}", imei.getValue());
 
-            // Create or update session
+            // Create or get existing session
             DeviceSession session = sessionService.createSession(imei, ctx.channel());
-            session.authenticate();
             
-            // Update session in repository
-            // The sessionService.createSession already saves it, but we authenticate after
-            sessionService.updateActivity(ctx.channel());
+            // CRITICAL FIX: Authenticate and save the session
+            session.authenticate();
+            sessionService.saveSession(session); // This was missing!
+            
+            logger.info("✅ Session authenticated and saved for IMEI: {}", imei.getValue());
 
             // Send login ACK
             ByteBuf ack = protocolParser.buildLoginAck(frame.getSerialNumber());
@@ -191,18 +187,28 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     /**
-     * Handle location message
+     * Handle location with proper session validation - FIXED
      */
-    private void handleLocation(ChannelHandlerContext ctx, MessageFrame frame, Optional<DeviceSession> sessionOpt) {
-        if (sessionOpt.isEmpty() || !sessionOpt.get().isAuthenticated()) {
-            logger.warn("❌ Received location from unauthenticated session: {}", 
+    private void handleLocationWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+        
+        if (sessionOpt.isEmpty()) {
+            logger.warn("❌ No authenticated session found for location from {}", 
                       ctx.channel().remoteAddress());
             return;
         }
 
         try {
+            DeviceSession session = sessionOpt.get();
+            logger.debug("✅ Processing location for authenticated IMEI: {}", 
+                       session.getImei().getValue());
+            
             // Process location data
-            telemetryService.processLocationMessage(sessionOpt.get(), frame);
+            telemetryService.processLocationMessage(session, frame);
+            
+            // Update session activity and save
+            session.updateActivity();
+            sessionService.saveSession(session);
             
             // Send ACK
             sendGenericAck(ctx, frame);
@@ -210,24 +216,31 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         } catch (Exception e) {
             logger.error("💥 Error handling location from {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
-            // Still try to send ACK
             sendGenericAck(ctx, frame);
         }
     }
 
     /**
-     * Handle status message
+     * Handle status with validation - FIXED
      */
-    private void handleStatus(ChannelHandlerContext ctx, MessageFrame frame, Optional<DeviceSession> sessionOpt) {
+    private void handleStatusWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+        
         if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No session found for status message from {}", 
+            logger.warn("❌ No authenticated session found for status from {}", 
                       ctx.channel().remoteAddress());
             return;
         }
 
         try {
+            DeviceSession session = sessionOpt.get();
+            
             // Process status data
-            telemetryService.processStatusMessage(sessionOpt.get(), frame);
+            telemetryService.processStatusMessage(session, frame);
+            
+            // Update session activity and save
+            session.updateActivity();
+            sessionService.saveSession(session);
             
             // Send ACK
             sendGenericAck(ctx, frame);
@@ -235,24 +248,31 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         } catch (Exception e) {
             logger.error("💥 Error handling status from {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
-            // Still try to send ACK
             sendGenericAck(ctx, frame);
         }
     }
 
     /**
-     * Handle LBS network message
+     * Handle LBS with validation - FIXED
      */
-    private void handleLBSNetwork(ChannelHandlerContext ctx, MessageFrame frame, Optional<DeviceSession> sessionOpt) {
+    private void handleLBSWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+        
         if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No session found for LBS message from {}", 
+            logger.warn("❌ No authenticated session found for LBS from {}", 
                       ctx.channel().remoteAddress());
             return;
         }
 
         try {
-            // Process LBS data
-            telemetryService.processLBSMessage(sessionOpt.get(), frame);
+            DeviceSession session = sessionOpt.get();
+            
+            // Process LBS data  
+            telemetryService.processLBSMessage(session, frame);
+            
+            // Update session activity and save
+            session.updateActivity();
+            sessionService.saveSession(session);
             
             // Send ACK
             sendGenericAck(ctx, frame);
@@ -260,24 +280,31 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         } catch (Exception e) {
             logger.error("💥 Error handling LBS from {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
-            // Still try to send ACK
             sendGenericAck(ctx, frame);
         }
     }
 
     /**
-     * Handle vendor multi message
+     * Handle vendor multi with validation - FIXED
      */
-    private void handleVendorMulti(ChannelHandlerContext ctx, MessageFrame frame, Optional<DeviceSession> sessionOpt) {
+    private void handleVendorMultiWithValidation(ChannelHandlerContext ctx, MessageFrame frame) {
+        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+        
         if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No session found for vendor-multi message from {}", 
+            logger.warn("❌ No authenticated session found for vendor-multi from {}", 
                       ctx.channel().remoteAddress());
             return;
         }
 
         try {
+            DeviceSession session = sessionOpt.get();
+            
             // Process vendor-specific multi-record data
-            telemetryService.processVendorMultiMessage(sessionOpt.get(), frame);
+            telemetryService.processVendorMultiMessage(session, frame);
+            
+            // Update session activity and save
+            session.updateActivity();
+            sessionService.saveSession(session);
             
             // Send ACK
             sendGenericAck(ctx, frame);
@@ -285,34 +312,61 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         } catch (Exception e) {
             logger.error("💥 Error handling vendor-multi from {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
-            // Still try to send ACK
             sendGenericAck(ctx, frame);
         }
     }
-    
-    /**
-     * Handle command response
-     */
-    private void handleCommandResponse(ChannelHandlerContext ctx, MessageFrame frame, Optional<DeviceSession> sessionOpt) {
-        if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No session found for command response from {}", 
-                      ctx.channel().remoteAddress());
-            return;
-        }
 
-        try {
-            logger.info("📤 Command response received from IMEI: {} (Serial: {})", 
-                      sessionOpt.get().getImei() != null ? sessionOpt.get().getImei().getValue() : "unknown",
-                      frame.getSerialNumber());
+    /**
+     * Handle heartbeat
+     */
+    private void handleHeartbeat(ChannelHandlerContext ctx, MessageFrame frame) {
+        // Heartbeat doesn't require authentication, just session existence
+        Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
+        
+        if (sessionOpt.isPresent()) {
+            DeviceSession session = sessionOpt.get();
+            session.updateActivity();
+            sessionService.saveSession(session);
             
-            // Could add command response processing here
-            // For now, just acknowledge
-            sendGenericAck(ctx, frame);
+            logger.debug("💓 Heartbeat from IMEI: {}", 
+                       session.getImei() != null ? session.getImei().getValue() : "unknown");
+        }
+        
+        // Always send heartbeat ACK
+        sendGenericAck(ctx, frame);
+    }
+
+    /**
+     * Get authenticated session with enhanced validation - NEW METHOD
+     */
+    private Optional<DeviceSession> getAuthenticatedSession(ChannelHandlerContext ctx) {
+        try {
+            // Get session for this channel
+            Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
+            
+            if (sessionOpt.isEmpty()) {
+                logger.debug("📭 No session found for channel: {}", ctx.channel().id().asShortText());
+                return Optional.empty();
+            }
+            
+            DeviceSession session = sessionOpt.get();
+            
+            if (!session.isAuthenticated()) {
+                logger.warn("🔐 Session exists but not authenticated for IMEI: {} from {}", 
+                          session.getImei() != null ? session.getImei().getValue() : "unknown",
+                          ctx.channel().remoteAddress());
+                return Optional.empty();
+            }
+            
+            logger.debug("✅ Found authenticated session for IMEI: {}", 
+                       session.getImei() != null ? session.getImei().getValue() : "unknown");
+            
+            return sessionOpt;
             
         } catch (Exception e) {
-            logger.error("💥 Error handling command response from {}: {}", 
+            logger.error("💥 Error getting authenticated session for {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
-            sendGenericAck(ctx, frame);
+            return Optional.empty();
         }
     }
 
@@ -322,7 +376,14 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     private void sendGenericAck(ChannelHandlerContext ctx, MessageFrame frame) {
         try {
             ByteBuf ack = protocolParser.buildGenericAck(frame.getProtocolNumber(), frame.getSerialNumber());
-            ctx.writeAndFlush(ack);
+            ctx.writeAndFlush(ack).addListener(future -> {
+                if (future.isSuccess()) {
+                    logger.debug("📤 ACK sent for protocol 0x{:02X}", frame.getProtocolNumber());
+                } else {
+                    logger.error("❌ Failed to send ACK: {}", 
+                               future.cause() != null ? future.cause().getMessage() : "Unknown error");
+                }
+            });
         } catch (Exception e) {
             logger.error("💥 Error sending ACK to {}: {}", 
                        ctx.channel().remoteAddress(), e.getMessage(), e);
@@ -359,11 +420,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         logger.error("💥 Exception in GT06Handler from {}: {}", 
                    ctx.channel().remoteAddress(), cause.getMessage(), cause);
         
-        // Close channel for serious errors
-        if (cause instanceof java.io.IOException) {
-            logger.warn("🚫 I/O exception, closing channel: {}", ctx.channel().remoteAddress());
-            ctx.close();
-        }
-        // For other exceptions, just continue (don't propagate)
+        // Close channel for serious errors  
+        ctx.close();
     }
 }

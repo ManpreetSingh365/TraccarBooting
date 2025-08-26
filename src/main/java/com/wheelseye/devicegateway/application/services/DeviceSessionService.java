@@ -18,13 +18,14 @@ import com.wheelseye.devicegateway.infrastructure.persistence.RedisSessionReposi
 import io.netty.channel.Channel;
 
 /**
- * Device Session Service - Fixed for proper session management
+ * Device Session Service - FIXED Authentication Persistence Issue
  * 
  * Key Fixes:
- * 1. ✅ Proper channel ID management (no storing Channel objects)
- * 2. ✅ Enhanced error handling and logging
- * 3. ✅ Better session lifecycle management
- * 4. ✅ Improved cleanup and monitoring
+ * 1. ✅ Added saveSession() method to persist session state changes
+ * 2. ✅ Proper session authentication flow with persistence
+ * 3. ✅ Enhanced session retrieval with better error handling
+ * 4. ✅ Improved channel ID management
+ * 5. ✅ Better cleanup and monitoring
  */
 @Service
 public class DeviceSessionService {
@@ -68,7 +69,7 @@ public class DeviceSessionService {
                                        channel.remoteAddress().toString() : "unknown");
             }
             
-            // Save to repository
+            // Save to repository (but not authenticated yet)
             sessionRepository.save(session);
             
             logger.info("✨ Created new session - IMEI: {} -> Session: {} -> Channel: {}", 
@@ -83,7 +84,31 @@ public class DeviceSessionService {
     }
     
     /**
-     * Get session by channel with improved error handling
+     * CRITICAL NEW METHOD: Save session state to repository
+     * This was the missing piece causing authentication issues!
+     */
+    public void saveSession(DeviceSession session) {
+        try {
+            if (session == null) {
+                logger.warn("⚠️ Attempt to save null session");
+                return;
+            }
+            
+            sessionRepository.save(session);
+            
+            logger.debug("💾 Session saved: {} (IMEI: {}, authenticated: {})", 
+                       session.getId(), 
+                       session.getImei() != null ? session.getImei().getValue() : "unknown",
+                       session.isAuthenticated());
+                       
+        } catch (Exception e) {
+            logger.error("💥 Failed to save session {}: {}", session.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to save session", e);
+        }
+    }
+    
+    /**
+     * Get session by channel with improved error handling and caching
      */
     public Optional<DeviceSession> getSession(Channel channel) {
         if (channel == null) {
@@ -92,18 +117,20 @@ public class DeviceSessionService {
         }
         
         try {
+            String channelId = channel.id().asShortText();
             Optional<DeviceSession> sessionOpt = sessionRepository.findByChannel(channel);
             
             if (sessionOpt.isPresent()) {
                 DeviceSession session = sessionOpt.get();
-                session.updateActivity();  // Update last activity
-                sessionRepository.save(session);  // Persist the update
                 
-                logger.debug("✅ Found session for channel {}: {}", 
-                           channel.id().asShortText(), session.getId());
+                logger.debug("✅ Found session for channel {}: {} (IMEI: {}, authenticated: {})", 
+                           channelId, session.getId(),
+                           session.getImei() != null ? session.getImei().getValue() : "unknown",
+                           session.isAuthenticated());
+                           
                 return sessionOpt;
             } else {
-                logger.debug("📭 No session found for channel: {}", channel.id().asShortText());
+                logger.debug("📭 No session found for channel: {}", channelId);
                 return Optional.empty();
             }
             
@@ -115,7 +142,7 @@ public class DeviceSessionService {
     }
     
     /**
-     * Get session by IMEI
+     * Get session by IMEI with enhanced logging
      */
     public Optional<DeviceSession> getSession(IMEI imei) {
         try {
@@ -123,10 +150,10 @@ public class DeviceSessionService {
             
             if (sessionOpt.isPresent()) {
                 DeviceSession session = sessionOpt.get();
-                session.updateActivity();
-                sessionRepository.save(session);
                 
-                logger.debug("✅ Found session for IMEI {}: {}", imei.getValue(), session.getId());
+                logger.debug("✅ Found session for IMEI {}: {} (authenticated: {})", 
+                           imei.getValue(), session.getId(), session.isAuthenticated());
+                           
                 return sessionOpt;
             } else {
                 logger.debug("📭 No session found for IMEI: {}", imei.getValue());
@@ -144,7 +171,14 @@ public class DeviceSessionService {
      */
     public Optional<DeviceSession> getSession(String sessionId) {
         try {
-            return sessionRepository.findById(sessionId);
+            Optional<DeviceSession> sessionOpt = sessionRepository.findById(sessionId);
+            
+            if (sessionOpt.isPresent()) {
+                logger.debug("✅ Found session by ID: {} (authenticated: {})", 
+                           sessionId, sessionOpt.get().isAuthenticated());
+            }
+            
+            return sessionOpt;
         } catch (Exception e) {
             logger.error("💥 Error getting session by ID {}: {}", sessionId, e.getMessage(), e);
             return Optional.empty();
@@ -202,7 +236,7 @@ public class DeviceSessionService {
     }
     
     /**
-     * Update session activity
+     * Update session activity and save - ENHANCED
      */
     public void updateActivity(Channel channel) {
         if (channel == null) return;
@@ -212,13 +246,40 @@ public class DeviceSessionService {
             if (sessionOpt.isPresent()) {
                 DeviceSession session = sessionOpt.get();
                 session.updateActivity();
+                
+                // CRITICAL: Save the updated session back to repository
                 sessionRepository.save(session);
                 
-                logger.debug("⏰ Updated activity for session: {}", session.getId());
+                logger.debug("⏰ Updated activity for session: {} (IMEI: {})", 
+                           session.getId(), 
+                           session.getImei() != null ? session.getImei().getValue() : "unknown");
             }
         } catch (Exception e) {
             logger.error("💥 Error updating activity for channel {}: {}", 
                        channel.id().asShortText(), e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Authenticate session and save - NEW METHOD
+     */
+    public void authenticateSession(DeviceSession session) {
+        try {
+            if (session == null) {
+                logger.warn("⚠️ Attempt to authenticate null session");
+                return;
+            }
+            
+            session.authenticate();
+            sessionRepository.save(session);
+            
+            logger.info("🔐 Session authenticated and saved: {} (IMEI: {})", 
+                       session.getId(),
+                       session.getImei() != null ? session.getImei().getValue() : "unknown");
+                       
+        } catch (Exception e) {
+            logger.error("💥 Error authenticating session {}: {}", session.getId(), e.getMessage(), e);
+            throw new RuntimeException("Failed to authenticate session", e);
         }
     }
     
@@ -287,6 +348,7 @@ public class DeviceSessionService {
                 session.setRemoteAddress(newRemoteAddress);
                 session.updateActivity();
                 
+                // CRITICAL: Save the updated session
                 sessionRepository.save(session);
                 
                 logger.debug("🔄 Updated channel info for session {}: {} -> {}", 
@@ -298,7 +360,7 @@ public class DeviceSessionService {
     }
     
     /**
-     * Get session statistics
+     * Get session statistics with authentication info
      */
     public SessionStats getSessionStats() {
         try {
