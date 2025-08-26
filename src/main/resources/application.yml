@@ -4,21 +4,16 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
-
     consumer:
-      group-id: ${KAFKA_CONSUMER_GROUP_ID:device-gateway-consumer-group}
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      group-id: device-gateway-group
       auto-offset-reset: earliest
-      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
-        spring.json.trusted.packages: "com.wheelseye.devicegateway.domain.events"
-
+        allow.auto.create.topics: false
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      acks: 1
-      retries: 3
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
     listener:
       ack-mode: MANUAL_IMMEDIATE

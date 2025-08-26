@@ -1,6 +1,11 @@
 version: '3.9'
-
 services:
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -9,8 +14,7 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
-    restart: unless-stopped
-
+    restart: unless-stopped  
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
@@ -28,14 +32,6 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_MIN_INSYNC_REPLICAS: 1
     restart: unless-stopped
-
-  redis:
-    image: redis:latest
-    container_name: redis
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-
   device-gateway-service:
     build: .
     container_name: device-gateway-service
@@ -44,6 +40,7 @@ services:
       - redis
     ports:
       - "8080:8080"
+      - "5023:5023"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_CONSUMER_GROUP_ID: device-gateway-consumer-group

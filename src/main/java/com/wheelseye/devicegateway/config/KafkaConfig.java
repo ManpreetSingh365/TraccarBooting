@@ -3,6 +3,8 @@ package com.wheelseye.devicegateway.config;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -15,6 +17,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
@@ -30,6 +33,24 @@ public class KafkaConfig {
 
     @Value("${KAFKA_CONSUMER_GROUP_ID}")
     private String consumerGroupId;
+
+    @Bean
+    public KafkaAdmin kafkaAdmin() {
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        return new KafkaAdmin(configs);
+    }
+
+    @Bean
+    public NewTopic commandsOutboundTopic() {
+        return new NewTopic("commands.outbound", 3, (short) 1);
+    }
+
+    @Bean
+    public NewTopic deviceSessionsTopic() {
+        return new NewTopic("device.sessions", 3, (short) 1);
+    }
+
 
     @Bean
     public ProducerFactory<String, Object> producerFactory() {
