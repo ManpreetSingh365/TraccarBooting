@@ -43,7 +43,7 @@ public class DeviceController {
     public ResponseEntity<DeviceSessionDto> getSessionByImei(@PathVariable String imei) {
         try {
             IMEI deviceImei = new IMEI(imei);
-            Optional<DeviceSession> session = deviceSessionService.getSessionByImei(deviceImei);
+            Optional<DeviceSession> session = deviceSessionService.getSession(deviceImei);
             
             if (session.isPresent()) {
                 return ResponseEntity.ok(modelMapper.map(session.get(), DeviceSessionDto.class));
