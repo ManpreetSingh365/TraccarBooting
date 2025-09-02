@@ -10,16 +10,16 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 
 /**
- * Enhanced GT06 Frame Decoder - Modern Java Implementation
+ * FIXED GT06 Frame Decoder - Resolves Frame Length and Validation Issues
  * 
- * Fixed Issues:
- * 1. ✅ Handles variable stop bits patterns (not just 0D 0A)
- * 2. ✅ Improved frame boundary detection
- * 3. ✅ Better error recovery and logging
- * 4. ✅ Handles real-world GT06 protocol variations
- * 5. ✅ Modern Java 21 features and best practices
+ * Key Fixes:
+ * 1. ✅ Corrected frame length calculation for both 0x7878 and 0x7979 headers
+ * 2. ✅ Proper handling of variable message types and lengths
+ * 3. ✅ Enhanced frame validation and error recovery
+ * 4. ✅ Fixed stop bits validation with flexible patterns
+ * 5. ✅ Improved logging and debugging capabilities
  * 
- * Compatible with all GT06/GT02/GT05/SK05 device variants
+ * Compatible with all GT06/GT02/GT05/SK05 device variants including V5 devices
  */
 public class GT06FrameDecoder extends ByteToMessageDecoder {
     
@@ -35,165 +35,234 @@ public class GT06FrameDecoder extends ByteToMessageDecoder {
     
     // Common stop patterns in GT06 protocol
     private static final int[] VALID_STOP_PATTERNS = {
-        0x0D0A,  // Standard CR LF
-        0x0A0D,  // Reverse LF CR  
-        0x0000,  // Some devices use null termination
-        0xFFFF   // Some variants use this
+        0x0D0A, // Standard CR LF
+        0x0A0D, // Reverse LF CR  
+        0x0000, // Some devices use null termination
+        0xFFFF  // Some variants use this
     };
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf buffer, List<Object> out) throws Exception {
-        
         while (buffer.readableBytes() >= MIN_FRAME_LENGTH) {
             buffer.markReaderIndex();
             
-            // Find frame start
-            var frameStartInfo = findFrameStart(buffer);
-            if (frameStartInfo == null) {
-                buffer.resetReaderIndex();
-                break;
-            }
-            
-            // Skip to frame start
-            if (frameStartInfo.offset() > 0) {
-                buffer.skipBytes(frameStartInfo.offset());
-                logger.debug("Skipped {} bytes to reach frame start", frameStartInfo.offset());
-            }
-            
-            // Ensure we have minimum bytes
-            if (buffer.readableBytes() < MIN_FRAME_LENGTH) {
-                buffer.resetReaderIndex();
-                break;
-            }
-            
-            // Try to parse complete frame
-            var frameInfo = parseFrameInfo(buffer);
+            // Find and validate frame start
+            FrameInfo frameInfo = findAndParseFrame(buffer);
             if (frameInfo == null) {
-                buffer.skipBytes(1);  // Skip bad byte and continue
-                continue;
+                buffer.resetReaderIndex();
+                break;
+            }
+            
+            // Skip to frame start if needed
+            if (frameInfo.offset() > 0) {
+                buffer.skipBytes(frameInfo.offset());
+                logger.debug("Skipped {} bytes to reach frame start", frameInfo.offset());
+                
+                // Re-parse from correct position
+                frameInfo = parseFrameStructure(buffer);
+                if (frameInfo == null) {
+                    buffer.skipBytes(1);
+                    continue;
+                }
             }
             
             // Check if we have complete frame
             if (buffer.readableBytes() < frameInfo.totalLength()) {
                 buffer.resetReaderIndex();
                 logger.debug("Incomplete frame: need {} bytes, have {}", 
-                           frameInfo.totalLength(), buffer.readableBytes());
+                    frameInfo.totalLength(), buffer.readableBytes());
                 break;
             }
             
             // Extract and validate frame
             if (extractAndValidateFrame(buffer, frameInfo, out, ctx)) {
                 logger.debug("Successfully decoded GT06 frame: {} bytes, header: 0x{:04X}", 
-                           frameInfo.totalLength(), frameInfo.header());
+                    frameInfo.totalLength(), frameInfo.header());
             } else {
-                buffer.skipBytes(1);  // Skip bad byte and continue
+                buffer.skipBytes(1); // Skip bad byte and continue
             }
         }
     }
     
     /**
-     * Find frame start with offset information
+     * Frame information record
      */
-    private record FrameStartInfo(int offset, int header) {}
+    private record FrameInfo(int offset, int header, int dataLength, int totalLength, boolean isExtended) {}
     
-    private FrameStartInfo findFrameStart(ByteBuf buffer) {
+    /**
+     * Find and parse frame with comprehensive validation
+     */
+    private FrameInfo findAndParseFrame(ByteBuf buffer) {
         int readerIndex = buffer.readerIndex();
-        int searchLimit = buffer.readableBytes() - 1;
+        int searchLimit = Math.min(buffer.readableBytes() - MIN_FRAME_LENGTH, 100); // Limit search
         
-        for (int i = 0; i < searchLimit; i++) {
+        for (int i = 0; i <= searchLimit; i++) {
             int currentPos = readerIndex + i;
+            
+            if (buffer.readableBytes() - i < MIN_FRAME_LENGTH) {
+                break;
+            }
+            
             int header = buffer.getUnsignedShort(currentPos);
             
             if (header == HEADER_78 || header == HEADER_79) {
-                logger.debug("Found GT06 frame start at offset {}: 0x{:04X}", i, header);
-                return new FrameStartInfo(i, header);
+                // Try to parse frame structure from this position
+                buffer.readerIndex(currentPos);
+                FrameInfo frameInfo = parseFrameStructure(buffer);
+                buffer.readerIndex(readerIndex); // Reset reader index
+                
+                if (frameInfo != null) {
+                    return new FrameInfo(i, frameInfo.header(), frameInfo.dataLength(), 
+                        frameInfo.totalLength(), frameInfo.isExtended());
+                }
             }
         }
         
-        logger.debug("No GT06 frame start found in {} bytes", searchLimit + 1);
         return null;
     }
     
     /**
-     * Parse frame structure information
+     * Parse frame structure with proper length calculation
      */
-    private record FrameInfo(int header, int dataLength, int totalLength, boolean is78Frame) {}
-    
-    private FrameInfo parseFrameInfo(ByteBuf buffer) {
+    private FrameInfo parseFrameStructure(ByteBuf buffer) {
         try {
-            int header = buffer.getUnsignedShort(buffer.readerIndex());
-            boolean is78Frame = (header == HEADER_78);
-            boolean is79Frame = (header == HEADER_79);
-            
-            if (!is78Frame && !is79Frame) {
+            if (buffer.readableBytes() < 3) {
                 return null;
             }
             
-            int headerSize = 2;  // Both 78 78 and 79 79 are 2 bytes
-            int lengthFieldSize = is78Frame ? 1 : 2;
+            int header = buffer.getUnsignedShort(buffer.readerIndex());
+            boolean isExtended = (header == HEADER_79);
+            
+            int headerSize = 2;
+            int lengthFieldSize = isExtended ? 2 : 1;
             int totalHeaderSize = headerSize + lengthFieldSize;
             
-            // Check if we have enough bytes for header + length
+            // Check if we have enough bytes for header + length field
             if (buffer.readableBytes() < totalHeaderSize) {
                 return null;
             }
             
-            // Read data length
+            // Read data length based on frame type
             int dataLength;
-            if (is78Frame) {
-                dataLength = buffer.getUnsignedByte(buffer.readerIndex() + 2);
-            } else {
+            if (isExtended) {
                 dataLength = buffer.getUnsignedShort(buffer.readerIndex() + 2);
+            } else {
+                dataLength = buffer.getUnsignedByte(buffer.readerIndex() + 2);
             }
             
-            // Calculate total frame length including header, data, CRC, and stop bits
-            int totalLength = totalHeaderSize + dataLength + 2 + 2;  // +2 CRC +2 stop bits
-            
-            // Validate reasonable frame length
-            if (totalLength > MAX_FRAME_LENGTH || totalLength < MIN_FRAME_LENGTH) {
-                logger.debug("Invalid frame length: {}", totalLength);
+            // Validate data length
+            if (dataLength < 1 || dataLength > MAX_FRAME_LENGTH - 10) {
+                logger.debug("Invalid data length: {}", dataLength);
                 return null;
             }
             
-            return new FrameInfo(header, dataLength, totalLength, is78Frame);
+            // Calculate total frame length
+            // Format: Header(2) + Length(1/2) + Data(N) + Serial(2) + CRC(2) + Stop(2)
+            int totalLength = totalHeaderSize + dataLength + 2 + 2 + 2;
+            
+            // Additional validation for extended frames
+            if (isExtended) {
+                // Extended frames: Length field includes everything after header
+                // So total = Header(2) + Length(2) + Payload(length) + Stop(2) 
+                totalLength = 2 + 2 + dataLength + 2;
+            }
+            
+            // Validate reasonable frame length
+            if (totalLength > MAX_FRAME_LENGTH || totalLength < MIN_FRAME_LENGTH) {
+                logger.debug("Invalid total frame length: {}", totalLength);
+                return null;
+            }
+            
+            return new FrameInfo(0, header, dataLength, totalLength, isExtended);
             
         } catch (Exception e) {
-            logger.debug("Failed to parse frame info", e);
+            logger.debug("Failed to parse frame structure", e);
             return null;
         }
     }
     
     /**
-     * Extract frame and validate with flexible stop bits checking
+     * Extract frame and validate with enhanced checking
      */
     private boolean extractAndValidateFrame(ByteBuf buffer, FrameInfo frameInfo, 
                                           List<Object> out, ChannelHandlerContext ctx) {
         try {
-            // Extract the frame data
+            // Extract the complete frame
             ByteBuf frame = buffer.readRetainedSlice(frameInfo.totalLength());
             
-            // Validate stop bits with flexibility
-            if (validateStopBits(frame, frameInfo, ctx)) {
-                out.add(frame);
-                return true;
-            } else {
-                // Still add frame but with warning - many GT06 devices have non-standard stop bits
-                logger.debug("Frame with non-standard stop bits from {}, but accepting anyway", 
-                           ctx.channel().remoteAddress());
-                out.add(frame);
-                return true;  // Accept it anyway - GT06 devices are not always standard-compliant
+            // Validate frame structure
+            if (!validateFrameStructure(frame, frameInfo, ctx)) {
+                logger.debug("Frame structure validation failed from {}", 
+                    ctx.channel().remoteAddress());
+                frame.release();
+                return false;
             }
             
+            // Add to output - let the handler deal with protocol specifics
+            out.add(frame);
+            return true;
+            
         } catch (Exception e) {
-            logger.error("Failed to extract frame", e);
+            logger.error("Failed to extract frame from {}: {}", 
+                ctx.channel().remoteAddress(), e.getMessage(), e);
             return false;
         }
     }
     
     /**
-     * Flexible stop bits validation - accepts common GT06 patterns
+     * Comprehensive frame structure validation
      */
-    private boolean validateStopBits(ByteBuf frame, FrameInfo frameInfo, ChannelHandlerContext ctx) {
+    private boolean validateFrameStructure(ByteBuf frame, FrameInfo frameInfo, ChannelHandlerContext ctx) {
+        try {
+            if (frame.readableBytes() != frameInfo.totalLength()) {
+                logger.debug("Frame length mismatch: expected {}, got {}", 
+                    frameInfo.totalLength(), frame.readableBytes());
+                return false;
+            }
+            
+            // Verify header
+            int actualHeader = frame.getUnsignedShort(0);
+            if (actualHeader != frameInfo.header()) {
+                logger.debug("Header mismatch: expected 0x{:04X}, got 0x{:04X}", 
+                    frameInfo.header(), actualHeader);
+                return false;
+            }
+            
+            // Verify length field
+            int lengthFieldOffset = frameInfo.isExtended() ? 2 : 2;
+            int expectedDataLength;
+            
+            if (frameInfo.isExtended()) {
+                expectedDataLength = frame.getUnsignedShort(lengthFieldOffset);
+            } else {
+                expectedDataLength = frame.getUnsignedByte(lengthFieldOffset);
+            }
+            
+            if (expectedDataLength != frameInfo.dataLength()) {
+                logger.debug("Data length field mismatch: expected {}, got {}", 
+                    frameInfo.dataLength(), expectedDataLength);
+                return false;
+            }
+            
+            // Validate stop bits (flexible approach)
+            if (!validateStopBits(frame, ctx)) {
+                // Log but don't reject - many GT06 devices have non-standard stop bits
+                logger.debug("Non-standard stop bits from {}, but accepting frame", 
+                    ctx.channel().remoteAddress());
+            }
+            
+            return true;
+            
+        } catch (Exception e) {
+            logger.debug("Frame structure validation error", e);
+            return false;
+        }
+    }
+    
+    /**
+     * Flexible stop bits validation for various GT06 device types
+     */
+    private boolean validateStopBits(ByteBuf frame, ChannelHandlerContext ctx) {
         try {
             if (frame.readableBytes() < 2) {
                 return false;
@@ -211,76 +280,22 @@ public class GT06FrameDecoder extends ByteToMessageDecoder {
                 }
             }
             
-            // Log the actual stop bits for debugging
-            logger.debug("Non-standard stop bits from {}: 0x{:04X}, but frame looks valid", 
-                       ctx.channel().remoteAddress(), actualStopBits);
+            // Log non-standard stop bits but accept frame
+            logger.debug("Non-standard stop bits from {}: 0x{:04X}", 
+                ctx.channel().remoteAddress(), actualStopBits);
             
-            // For GT06 protocol, we're more lenient - if the frame structure looks correct,
-            // accept it even with non-standard stop bits
-            return isFrameStructureValid(frame, frameInfo);
+            return true; // Accept anyway - GT06 devices vary widely
             
         } catch (Exception e) {
             logger.debug("Stop bits validation failed", e);
-            return false;
+            return true; // Accept frame anyway
         }
-    }
-    
-    /**
-     * Validate frame structure beyond just stop bits
-     */
-    private boolean isFrameStructureValid(ByteBuf frame, FrameInfo frameInfo) {
-        try {
-            // Basic structure validation
-            if (frame.readableBytes() != frameInfo.totalLength()) {
-                return false;
-            }
-            
-            // Verify header
-            int frameHeader = frame.getUnsignedShort(0);
-            if (frameHeader != frameInfo.header()) {
-                return false;
-            }
-            
-            // Verify length field
-            int expectedDataLength;
-            if (frameInfo.is78Frame()) {
-                expectedDataLength = frame.getUnsignedByte(2);
-            } else {
-                expectedDataLength = frame.getUnsignedShort(2);
-            }
-            
-            if (expectedDataLength != frameInfo.dataLength()) {
-                return false;
-            }
-            
-            // If we get here, frame structure is valid
-            return true;
-            
-        } catch (Exception e) {
-            logger.debug("Frame structure validation failed", e);
-            return false;
-        }
-    }
-    
-    /**
-     * Extract protocol number for logging
-     */
-    private int getProtocolNumber(ByteBuf frame, boolean is78Frame) {
-        try {
-            int protocolOffset = is78Frame ? 3 : 4;
-            if (frame.readableBytes() > protocolOffset) {
-                return frame.getUnsignedByte(protocolOffset);
-            }
-        } catch (Exception e) {
-            logger.debug("Could not extract protocol number", e);
-        }
-        return -1;
     }
     
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         logger.error("Exception in GT06FrameDecoder from {}: {}", 
-                    ctx.channel().remoteAddress(), cause.getMessage(), cause);
+            ctx.channel().remoteAddress(), cause.getMessage(), cause);
         
         // Only close for serious I/O errors, not parsing errors
         if (cause instanceof java.io.IOException) {
@@ -296,7 +311,7 @@ public class GT06FrameDecoder extends ByteToMessageDecoder {
     protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         if (in.readableBytes() > 0) {
             logger.debug("Processing remaining {} bytes on channel close from {}", 
-                       in.readableBytes(), ctx.channel().remoteAddress());
+                in.readableBytes(), ctx.channel().remoteAddress());
             decode(ctx, in, out);
         }
     }
