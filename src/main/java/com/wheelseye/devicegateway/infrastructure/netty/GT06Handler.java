@@ -28,8 +28,10 @@ import io.netty.handler.timeout.IdleStateEvent;
  * FINAL FIX - GT06 Handler - VARIANT PERSISTENCE ISSUE RESOLVED
  * 
  * CRITICAL FIX:
- * 1. ✅ DEVICE VARIANT PERSISTENCE - Variant properly persists from login to status processing
- * 2. ✅ V5 DEVICE LOGIC - Uses correct V5 logic when variant is properly detected
+ * 1. ✅ DEVICE VARIANT PERSISTENCE - Variant properly persists from login to
+ * status processing
+ * 2. ✅ V5 DEVICE LOGIC - Uses correct V5 logic when variant is properly
+ * detected
  * 3. ✅ NO KAFKA CALLS - Location displayed immediately without Kafka
  * 4. ✅ CONNECTION PERSISTENCE - Connections stay open after login
  * 5. ✅ ALL PROTOCOL SUPPORT - Complete protocol coverage including 0x94
@@ -73,7 +75,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     public void channelActive(ChannelHandlerContext ctx) {
         String remoteAddress = ctx.channel().remoteAddress().toString();
         String channelId = ctx.channel().id().asShortText();
-        
+
         logger.info("📡 New GT06 connection established: {} (Channel ID: {})", remoteAddress, channelId);
         channelRegistry.register(channelId, ctx.channel());
     }
@@ -88,8 +90,8 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         try {
             String remoteAddress = ctx.channel().remoteAddress().toString();
             String hexDump = ByteBufUtil.hexDump(buffer);
-            logger.info("📥 RAW DATA RECEIVED from {}: {} bytes - {}", 
-                remoteAddress, buffer.readableBytes(), hexDump);
+            logger.info("📥 RAW DATA RECEIVED from {}: {} bytes - {}",
+                    remoteAddress, buffer.readableBytes(), hexDump);
 
             MessageFrame frame = protocolParser.parseFrame(buffer);
             if (frame == null) {
@@ -97,15 +99,15 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                 return;
             }
 
-            logger.info("📦 PARSED FRAME from {}: protocol=0x{:02X}, serial={}, length={}", 
-                remoteAddress, frame.getProtocolNumber(), frame.getSerialNumber(), 
-                frame.getContent().readableBytes());
+            logger.info("📦 PARSED FRAME from {}: protocol=0x{:02X}, serial={}, length={}",
+                    remoteAddress, frame.getProtocolNumber(), frame.getSerialNumber(),
+                    frame.getContent().readableBytes());
 
             processMessage(ctx, frame);
 
         } catch (Exception e) {
-            logger.error("💥 Error processing message from {}: {}", 
-                ctx.channel().remoteAddress(), e.getMessage(), e);
+            logger.error("💥 Error processing message from {}: {}",
+                    ctx.channel().remoteAddress(), e.getMessage(), e);
         } finally {
             buffer.release();
         }
@@ -188,8 +190,8 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                 }
             }
         } catch (Exception e) {
-            logger.error("💥 Error processing protocol 0x{:02X} from {}: {}", 
-                protocolNumber, remoteAddress, e.getMessage(), e);
+            logger.error("💥 Error processing protocol 0x{:02X} from {}: {}",
+                    protocolNumber, remoteAddress, e.getMessage(), e);
             sendGenericAck(ctx, frame);
         }
     }
@@ -199,7 +201,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
      */
     private void handleLogin(ChannelHandlerContext ctx, MessageFrame frame) {
         String remoteAddress = ctx.channel().remoteAddress().toString();
-        
+
         try {
             String loginHex = ByteBufUtil.hexDump(frame.getContent());
             logger.info("🔐 LOGIN frame content: {}", loginHex);
@@ -220,26 +222,26 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             DeviceSession session = DeviceSession.create(imei);
             session.setChannelId(ctx.channel().id().asShortText());
             session.setRemoteAddress(remoteAddress);
-            
+
             // CRITICAL FIX: Ensure variant is properly saved and persisted
             session.setDeviceVariant(deviceVariant);
             session.authenticate();
-            
+
             // Save session BEFORE sending ACK to ensure persistence
             sessionService.saveSession(session);
-            
+
             // Verify the save worked
             Optional<DeviceSession> savedSession = sessionService.getSession(ctx.channel());
             if (savedSession.isPresent()) {
                 String savedVariant = savedSession.get().getDeviceVariant();
-                logger.info("✅ Session saved successfully - Variant verified: {} for IMEI: {}", 
-                    savedVariant, imei.getValue());
+                logger.info("✅ Session saved successfully - Variant verified: {} for IMEI: {}",
+                        savedVariant, imei.getValue());
             } else {
                 logger.error("❌ Session save failed for IMEI: {}", imei.getValue());
             }
-            
-            logger.info("✅ Session authenticated and saved for IMEI: {} (Session ID: {}, Variant: {})", 
-                imei.getValue(), session.getId(), session.getDeviceVariant());
+
+            logger.info("✅ Session authenticated and saved for IMEI: {} (Session ID: {}, Variant: {})",
+                    imei.getValue(), session.getId(), session.getDeviceVariant());
 
             ByteBuf ack = protocolParser.buildLoginAck(frame.getSerialNumber());
             ctx.writeAndFlush(ack).addListener(future -> {
@@ -264,7 +266,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
      */
     private void handleStatusPacketForV5Device(ChannelHandlerContext ctx, MessageFrame frame) {
         String remoteAddress = ctx.channel().remoteAddress().toString();
-        
+
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
         if (sessionOpt.isEmpty()) {
             logger.warn("❌ No authenticated session for status from {}", remoteAddress);
@@ -274,13 +276,13 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         try {
             DeviceSession session = sessionOpt.get();
             String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-            
+
             // CRITICAL FIX: Get variant from session and DON'T re-detect
             String variant = session.getDeviceVariant();
-            
+
             // Debug logging
             logger.info("🔍 Session variant check: stored='{}' for IMEI: {}", variant, imei);
-            
+
             // CRITICAL: Do NOT re-detect variant - use the stored one from login
             if (variant == null || variant.equals("UNKNOWN") || variant.equals("GT06_UNKNOWN")) {
                 logger.warn("⚠️ Variant lost from session for IMEI: {}, restoring from login detection", imei);
@@ -297,14 +299,14 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             if ("V5".equalsIgnoreCase(variant)) {
                 logger.info("✅ V5 device status packet - this is EXPECTED behavior after login for IMEI: {}", imei);
                 logger.info("📱 V5 Device {} is functioning NORMALLY - status packets are primary communication", imei);
-                
+
                 // KAFKA DISABLED - Process locally only
                 logger.info("📊 Status packet processed locally (Kafka disabled as requested) for IMEI: {}", imei);
-                
+
                 session.updateActivity();
                 sessionService.saveSession(session);
                 sendGenericAck(ctx, frame);
-                
+
                 // Provide guidance only once
                 if (!session.hasReceivedStatusAdvice()) {
                     logger.info("💡 V5 Device Tips for IMEI {}:", imei);
@@ -315,12 +317,12 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                     session.markStatusAdviceGiven();
                     sessionService.saveSession(session);
                 }
-                
+
             } else {
                 // For non-V5 devices
                 logger.warn("⚠️ Non-V5 device {} sending status instead of location - check configuration", imei);
                 logger.warn("💡 Try SMS commands: 'upload_time#123456#30#' or 'tracker#123456#'");
-                
+
                 logger.info("📊 Status packet processed locally (Kafka disabled as requested) for IMEI: {}", imei);
                 session.updateActivity();
                 sessionService.saveSession(session);
@@ -338,7 +340,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
      */
     private void handleLocationPacket(ChannelHandlerContext ctx, MessageFrame frame) {
         String remoteAddress = ctx.channel().remoteAddress().toString();
-        
+
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
         if (sessionOpt.isEmpty()) {
             logger.warn("❌ No authenticated session for location from {}", remoteAddress);
@@ -358,9 +360,9 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                 logLocationDataEnhanced(location, imei, remoteAddress, frame.getProtocolNumber());
                 session.markLocationDataReceived();
             } else {
-                logger.warn("❌ Failed to parse location data for IMEI: {} - Raw data: {}", 
-                    imei, ByteBufUtil.hexDump(frame.getContent()));
-                
+                logger.warn("❌ Failed to parse location data for IMEI: {} - Raw data: {}",
+                        imei, ByteBufUtil.hexDump(frame.getContent()));
+
                 // Try alternative parsing approach
                 tryAlternativeLocationParsing(frame.getContent(), imei, remoteAddress, frame.getProtocolNumber());
             }
@@ -380,33 +382,108 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
 
     /**
      * Try alternative location parsing if main parser fails
+     * ENHANCED: Always display coordinates when present in packet data
      */
     private void tryAlternativeLocationParsing(ByteBuf content, String imei, String remoteAddress, int protocolNumber) {
         try {
-            logger.info("🔍 Attempting alternative location parsing for IMEI: {}", imei);
-            
+            logger.info("🔍 Enhanced location parsing for IMEI: {}", imei);
+
             content.resetReaderIndex();
             String hexData = ByteBufUtil.hexDump(content);
             logger.info("📊 Raw location data: {}", hexData);
-            
-            // Log as informational location data even if parsing fails
-            logger.info("📍 ========== LOCATION DATA DETECTED ==========");
+
+            // CRITICAL FIX: Always attempt coordinate extraction
+            if (content.readableBytes() >= 20) {
+                // Parse according to GT06 protocol structure
+                int year = 2000 + content.readUnsignedByte();
+                int month = content.readUnsignedByte();
+                int day = content.readUnsignedByte();
+                int hour = content.readUnsignedByte();
+                int minute = content.readUnsignedByte();
+                int second = content.readUnsignedByte();
+
+                // Skip GPS header info (2 bytes)
+                content.skipBytes(2);
+
+                // Extract coordinates (bytes [7-14])
+                if (content.readableBytes() >= 8) {
+                    long latRaw = content.readUnsignedInt();
+                    long lonRaw = content.readUnsignedInt();
+
+                    // Apply correct GT06 scaling
+                    double latitude = latRaw / 1800000.0;
+                    double longitude = lonRaw / 1800000.0;
+
+                    // Extract additional data if available
+                    double speed = 0;
+                    int course = 0;
+                    boolean gpsFixed = false;
+
+                    if (content.readableBytes() >= 3) {
+                        speed = content.readUnsignedByte();
+                        int courseStatus = content.readUnsignedShort();
+                        course = courseStatus & 0x3FF;
+                        gpsFixed = ((courseStatus >> 12) & 0x01) == 1;
+
+                        // Apply hemisphere flags
+                        boolean south = ((courseStatus >> 10) & 0x01) == 1;
+                        boolean west = ((courseStatus >> 11) & 0x01) == 1;
+
+                        if (south)
+                            latitude = -Math.abs(latitude);
+                        else
+                            latitude = Math.abs(latitude);
+
+                        if (west)
+                            longitude = -Math.abs(longitude);
+                        else
+                            longitude = Math.abs(longitude);
+                    }
+
+                    // ALWAYS LOG RESULTS (main fix!)
+                    logger.info("📍 ========== LOCATION DATA EXTRACTED ==========");
+                    logger.info("📍 IMEI: {}", imei);
+                    logger.info("📍 Source: {}", remoteAddress);
+                    logger.info("📍 Protocol: 0x{:02X}", protocolNumber);
+                    logger.info("📍 DateTime: {:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}", year, month, day, hour,
+                            minute, second);
+                    logger.info("📍 Latitude: {:.6f}°", latitude);
+                    logger.info("📍 Longitude: {:.6f}°", longitude);
+                    logger.info("📍 Speed: {:.1f} km/h", speed);
+                    logger.info("📍 Course: {}°", course);
+                    logger.info("📍 GPS Valid: {}", gpsFixed ? "YES" : "NO");
+                    logger.info("📍 Raw Data: {}", hexData);
+
+                    // Provide Google Maps link if coordinates are reasonable
+                    if (Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 &&
+                            latitude != 0 && longitude != 0) {
+                        logger.info("📍 Google Maps: https://maps.google.com/maps?q={:.6f},{:.6f}", latitude,
+                                longitude);
+                        logger.info("📍 Status: ✅ COORDINATES SUCCESSFULLY EXTRACTED");
+                    } else {
+                        logger.info("📍 Status: ⚠️  Coordinates extracted but may need verification");
+                    }
+
+                    logger.info("📍 ============================================");
+                    return; // Success!
+                }
+            }
+
+            // If structured parsing fails, at least log the data
+            logger.info("📍 ========== RAW LOCATION DATA ==========");
             logger.info("📍 IMEI: {}", imei);
-            logger.info("📍 Source: {}", remoteAddress);
-            logger.info("📍 Protocol: 0x{:02X}", protocolNumber);
             logger.info("📍 Raw Data: {}", hexData);
-            logger.info("📍 Data Length: {} bytes", content.readableBytes());
-            logger.info("📍 Status: Location packet received but parsing failed");
-            logger.info("📍 Action: Device is sending location data - parser needs enhancement");
-            logger.info("📍 ============================================");
-            
+            logger.info("📍 Length: {} bytes", content.readableBytes());
+            logger.info("📍 Status: Contains location data but needs enhanced parser");
+            logger.info("📍 =======================================");
+
         } catch (Exception e) {
-            logger.debug("Alternative parsing also failed: {}", e.getMessage());
+            logger.debug("Enhanced parsing error: {}", e.getMessage());
         }
     }
 
     /**
-     * Enhanced LBS packet handling 
+     * Enhanced LBS packet handling
      */
     private void handleLBSPacket(ChannelHandlerContext ctx, MessageFrame frame) {
         Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
@@ -418,14 +495,14 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         try {
             DeviceSession session = sessionOpt.get();
             String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-            
+
             logger.info("📶 Processing LBS packet for IMEI: {}", imei);
-            
+
             // LBS packets may contain approximate location data
             ByteBuf content = frame.getContent();
             content.resetReaderIndex();
             String hexData = ByteBufUtil.hexDump(content);
-            
+
             logger.info("📍 ========== LBS LOCATION DATA ==========");
             logger.info("📍 IMEI: {}", imei);
             logger.info("📍 Source: {}", ctx.channel().remoteAddress());
@@ -434,13 +511,13 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             logger.info("📍 Description: Cell tower based approximate location");
             logger.info("📍 Note: This provides rough location based on cell towers");
             logger.info("📍 ====================================");
-            
+
             logger.info("📶 LBS processed locally (Kafka disabled as requested) for IMEI: {}", imei);
-            
+
             session.updateActivity();
             sessionService.saveSession(session);
             sendGenericAck(ctx, frame);
-            
+
         } catch (Exception e) {
             logger.error("💥 Error handling LBS packet: {}", e.getMessage(), e);
             sendGenericAck(ctx, frame);
@@ -464,13 +541,13 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         logger.info("📍 GPS Valid: {}", location.isValid() ? "YES" : "NO");
         logger.info("📍 Timestamp: {}", location.getTimestamp());
         logger.info("📍 Received At: {}", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        
+
         // Google Maps link for verification
         if (location.getLatitude() != 0.0 && location.getLongitude() != 0.0) {
-            logger.info("📍 Google Maps: https://maps.google.com/maps?q={:.6f},{:.6f}", 
-                location.getLatitude(), location.getLongitude());
+            logger.info("📍 Google Maps: https://maps.google.com/maps?q={:.6f},{:.6f}",
+                    location.getLatitude(), location.getLongitude());
         }
-        
+
         logger.info("📍 ============================================");
     }
 
@@ -484,31 +561,31 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                 logger.debug("🔍 Not a login packet, skipping variant detection");
                 return "UNKNOWN";
             }
-            
+
             int dataLength = frame.getContent().readableBytes();
-            
+
             logger.debug("🔍 Login packet analysis: length={} bytes", dataLength);
-            
+
             // V5 device detection - short login frames
             if (dataLength <= 12) {
                 logger.info("🔍 V5 device detected: short login frame ({} bytes)", dataLength);
                 return "V5";
             }
-            
-            // SK05 device detection - standard login frames  
+
+            // SK05 device detection - standard login frames
             if (dataLength >= 13 && dataLength <= 16) {
                 logger.info("🔍 SK05 device detected: standard login frame ({} bytes)", dataLength);
                 return "SK05";
             }
-            
+
             // GT06 standard variants
             if (dataLength >= 8) {
                 logger.info("🔍 GT06_STANDARD device detected: login frame ({} bytes)", dataLength);
                 return "GT06_STANDARD";
             }
-            
+
             return "GT06_UNKNOWN";
-            
+
         } catch (Exception e) {
             logger.debug("🔍 Error detecting device variant: {}", e.getMessage());
             return "GT06_UNKNOWN";
@@ -548,13 +625,13 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     private void handleUnknownPacket(ChannelHandlerContext ctx, MessageFrame frame) {
         String remoteAddress = ctx.channel().remoteAddress().toString();
         int protocolNumber = frame.getProtocolNumber();
-        
-        logger.warn("❓ Unknown packet: Protocol=0x{:02X}, Length={}, From: {}", 
-            protocolNumber, frame.getContent().readableBytes(), remoteAddress);
-        
+
+        logger.warn("❓ Unknown packet: Protocol=0x{:02X}, Length={}, From: {}",
+                protocolNumber, frame.getContent().readableBytes(), remoteAddress);
+
         String hexData = ByteBufUtil.hexDump(frame.getContent());
         logger.warn("❓ Raw data: {}", hexData);
-        
+
         sendGenericAck(ctx, frame);
     }
 
@@ -563,18 +640,18 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
      */
     private void handleHeartbeat(ChannelHandlerContext ctx, MessageFrame frame) {
         Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
-        
+
         if (sessionOpt.isPresent()) {
             DeviceSession session = sessionOpt.get();
             session.updateActivity();
             sessionService.saveSession(session);
-            
+
             String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
             logger.info("💓 Heartbeat from IMEI: {} (Variant: {})", imei, session.getDeviceVariant());
         } else {
             logger.info("💓 Heartbeat from unknown session: {}", ctx.channel().remoteAddress());
         }
-        
+
         sendGenericAck(ctx, frame);
     }
 
@@ -586,10 +663,10 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         if (sessionOpt.isPresent()) {
             DeviceSession session = sessionOpt.get();
             String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-            
+
             logger.info("📤 Command response from IMEI: {} (Serial: {})", imei, frame.getSerialNumber());
         }
-        
+
         sendGenericAck(ctx, frame);
     }
 
@@ -599,7 +676,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     private Optional<DeviceSession> getAuthenticatedSession(ChannelHandlerContext ctx) {
         try {
             Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
-            
+
             if (sessionOpt.isEmpty()) {
                 logger.debug("📭 No session found for channel");
                 return Optional.empty();
@@ -613,7 +690,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             }
 
             return sessionOpt;
-            
+
         } catch (Exception e) {
             logger.error("💥 Error getting authenticated session: {}", e.getMessage(), e);
             return Optional.empty();
@@ -626,12 +703,12 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     private void sendGenericAck(ChannelHandlerContext ctx, MessageFrame frame) {
         try {
             ByteBuf ack = protocolParser.buildGenericAck(frame.getProtocolNumber(), frame.getSerialNumber());
-            
-            logger.debug("📤 Sending ACK for protocol 0x{:02X}, serial {}", 
-                frame.getProtocolNumber(), frame.getSerialNumber());
-            
+
+            logger.debug("📤 Sending ACK for protocol 0x{:02X}, serial {}",
+                    frame.getProtocolNumber(), frame.getSerialNumber());
+
             ctx.writeAndFlush(ack);
-            
+
         } catch (Exception e) {
             logger.error("💥 Error sending ACK: {}", e.getMessage(), e);
         }
@@ -651,18 +728,18 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     public void channelInactive(ChannelHandlerContext ctx) {
         String remoteAddress = ctx.channel().remoteAddress().toString();
         String channelId = ctx.channel().id().asShortText();
-        
+
         logger.info("🔌 Connection closed: {} (Channel ID: {})", remoteAddress, channelId);
-        
+
         channelRegistry.unregister(channelId);
         sessionService.removeSession(ctx.channel());
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        logger.error("💥 Exception from {}: {}", 
-            ctx.channel().remoteAddress(), cause.getMessage(), cause);
-        
+        logger.error("💥 Exception from {}: {}",
+                ctx.channel().remoteAddress(), cause.getMessage(), cause);
+
         // Don't close for minor errors - GT06 devices need persistent connections
         if (cause instanceof java.io.IOException) {
             logger.warn("🔌 I/O exception, closing: {}", ctx.channel().remoteAddress());
