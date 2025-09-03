@@ -5,11 +5,13 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 
+@Component
 public class Gt06ParsingMethods {
 
     private static final Logger logger = LoggerFactory.getLogger(Gt06ParsingMethods.class);
