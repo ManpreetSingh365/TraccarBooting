@@ -17,14 +17,14 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.18</version>
+        <version>3.5.5</version>
         <relativePath/>
     </parent>
-    
+
     <properties>
-        <java.version>21</java.version>
-        <netty.version>4.1.100.Final</netty.version>
-        <kafka.version>3.2.3</kafka.version>
+        <java.version>21</java.version> <!-- Target JDK 21 -->
+        <netty.version>4.1.100.Final</netty.version> <!-- Stable Netty version -->
+        <kafka.version>3.5.1</kafka.version> <!-- Kafka clients compatible with Spring Boot 3.5 -->
     </properties>
     
     <dependencies>
@@ -38,17 +38,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
-        
-        <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
-        </dependency>
-        
+
         <!-- Netty -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-all</artifactId>
             <version>${netty.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+            <version>3.3.4</version>
         </dependency>
         
         <!-- JSON Processing -->
@@ -94,11 +95,7 @@
             <scope>test</scope>
         </dependency>
         
-        <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka-test</artifactId>
-            <scope>test</scope>
-        </dependency>
+
 
         <dependency>
             <groupId>it.ozimov</groupId>
@@ -106,15 +103,59 @@
             <version>0.7.3</version>
             <scope>test</scope>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/com.google.protobuf/protobuf-java -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>4.31.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java-util</artifactId>
+            <version>3.24.3</version> <!-- use the latest stable version -->
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
 
     </dependencies>
-    
+
     <build>
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.0</version>
+            </extension>
+        </extensions>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+    <plugin>
+    <groupId>org.xolstice.maven.plugins</groupId>
+    <artifactId>protobuf-maven-plugin</artifactId>
+    <version>0.6.1</version>
+    <configuration>
+        <protocArtifact>com.google.protobuf:protoc:3.24.4:exe:${os.detected.classifier}</protocArtifact>
+    </configuration>
+    <executions>
+        <execution>
+            <goals>
+                <goal>compile</goal> <!-- Only this goal is needed -->
+            </goals>
+        </execution>
+    </executions>
+</plugin>
+
+
+
         </plugins>
     </build>
 </project>

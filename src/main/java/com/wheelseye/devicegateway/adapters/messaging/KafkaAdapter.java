@@ -6,13 +6,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class KafkaAdapter {
     
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, byte[]> kafkaTemplate;
     
-    public KafkaAdapter(KafkaTemplate<String, Object> kafkaTemplate) {
+    public KafkaAdapter(KafkaTemplate<String, byte[]> kafkaTemplate) {
         this.kafkaTemplate = kafkaTemplate;
     }
     
-    public void sendMessage(String topic, String key, Object message) {
+    public void sendMessage(String topic, String key, byte[] message) {
         kafkaTemplate.send(topic, key, message);
     }
 }

@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 
+import com.wheelseye.devicegateway.adapters.messaging.KafkaAdapter;
+import com.wheelseye.devicegateway.domain.mappers.LocationMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,9 +41,14 @@ import io.netty.handler.timeout.IdleStateEvent;
 public class GT06Handler extends ChannelInboundHandlerAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(GT06Handler.class);
+    private final KafkaAdapter kafkaAdapter;
 
-    @Autowired
-    private DeviceSessionService sessionService;
+    public GT06Handler(KafkaAdapter kafkaAdapter){
+        this.kafkaAdapter = kafkaAdapter;
+    }
+
+//    @Autowired
+//    private DeviceSessionService sessionService;
 
     @Autowired
     private TelemetryProcessingService telemetryService;
@@ -199,7 +206,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                     Location location = protocolParser.parseLocation(frame);
                     if (location != null) {
                         logger.info("🎯 SUCCESS! Unknown packet 0x{:02X} contains LOCATION DATA!", protocolNumber);
-                        logLocationData(location, "UNKNOWN", remoteAddress);
+                        logLocationData(location, remoteAddress);
                     }
                 } catch (Exception e) {
                     logger.debug("🔍 Unknown packet 0x{:02X} is not location data: {}", protocolNumber, e.getMessage());
@@ -231,14 +238,14 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
             logger.info("🔐 Login request from IMEI: {}", imei.getValue());
 
             // Create or get existing session
-            DeviceSession session = sessionService.createSession(imei, ctx.channel());
-            
-            // Authenticate and save the session
-            session.authenticate();
-            sessionService.saveSession(session);
-            
-            logger.info("✅ Session authenticated and saved for IMEI: {} (Session ID: {})", 
-                       imei.getValue(), session.getId());
+//            DeviceSession session = sessionService.createSession(imei, ctx.channel());
+//
+//            // Authenticate and save the session
+//            session.authenticate();
+//            sessionService.saveSession(session);
+//
+//            logger.info("✅ Session authenticated and saved for IMEI: {} (Session ID: {})",
+//                       imei.getValue(), session.getId());
 
             // Send login ACK
             ByteBuf ack = protocolParser.buildLoginAck(frame.getSerialNumber());
@@ -275,53 +282,53 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         logger.info("📍 LOCATION PROCESSING START from {}", remoteAddress);
         
         // Get authenticated session
-        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
-        
-        if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No authenticated session for location from {} - rejecting", remoteAddress);
-            return;
-        }
+//        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+//
+//        if (sessionOpt.isEmpty()) {
+//            logger.warn("❌ No authenticated session for location from {} - rejecting", remoteAddress);
+//            return;
+//        }
 
-        DeviceSession session = sessionOpt.get();
-        String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//        DeviceSession session = sessionOpt.get();
+//        String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
         
-        logger.info("✅ Processing location for authenticated IMEI: {}", imei);
+        logger.info("✅ Processing location for authenticated");
 
         try {
             // Log raw location frame content for debugging
             String locationHex = ByteBufUtil.hexDump(frame.getContent());
-            logger.info("📍 LOCATION frame content (IMEI: {}): {}", imei, locationHex);
+            logger.info("📍 LOCATION frame content : {}",  locationHex);
             
             // IMMEDIATELY parse and log location data (BEFORE Kafka)
             Location location = protocolParser.parseLocation(frame);
             if (location != null) {
                 // 🎯 PRIMARY LOCATION LOG - This is what you want to see!
-                logLocationData(location, imei, remoteAddress);
+                logLocationData(location, remoteAddress);
                 
             } else {
-                logger.warn("❌ Failed to parse location data for IMEI: {} - Raw: {}", imei, locationHex);
+                logger.warn("❌ Failed to parse location data - Raw: {}", locationHex);
                 // Try alternative parsing approaches
-                tryAlternativeLocationParsing(frame, imei);
+                tryAlternativeLocationParsing(frame);
             }
             
             // Now try to process through telemetry service (Kafka)
             try {
-                logger.info("📤 Sending location to Kafka for IMEI: {}", imei);
-                telemetryService.processLocationMessage(session, frame);
-                logger.info("✅ Location sent to Kafka successfully for IMEI: {}", imei);
+                logger.info("📤 Sending location to Kafka");
+//                telemetryService.processLocationMessage(session, frame);
+//                logger.info("✅ Location sent to Kafka successfully for IMEI: {}", imei);
             } catch (Exception kafkaError) {
                 // Don't fail if Kafka is down - we've already logged the location above
-                logger.warn("⚠️ Kafka processing failed for IMEI: {}, but location was logged: {}", 
-                          imei, kafkaError.getMessage());
+//                logger.warn("⚠️ Kafka processing failed for IMEI: {}, but location was logged: {}",
+//                          imei, kafkaError.getMessage());
             }
             
             // Update session activity and save
-            session.updateActivity();
-            sessionService.saveSession(session);
-            
+//            session.updateActivity();
+//            sessionService.saveSession(session);
+
             // Send ACK to device
             sendGenericAck(ctx, frame);
-            logger.info("📤 Location ACK sent to IMEI: {}", imei);
+            logger.info("📤 Location ACK sent");
             
         } catch (Exception e) {
             logger.error("💥 Error handling location from {}: {}", remoteAddress, e.getMessage(), e);
@@ -334,14 +341,18 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     /**
      * Log location data in the requested format
      */
-    private void logLocationData(Location location, String imei, String remoteAddress) {
+    private void logLocationData(Location location,  String remoteAddress) {
         // PRIMARY LOCATION LOG in requested format
-        logger.info("📍 Received location - IMEI: {}, Lat: {:.6f}, Lon: {:.6f}, Speed: {:.1f} km/h", 
-                   imei, location.getLatitude(), location.getLongitude(), location.getSpeed());
+        logger.info("📍 Received location -  Lat: {:.6f}, Lon: {:.6f}, Speed: {:.1f} km/h",
+                    location.getLatitude(), location.getLongitude(), location.getSpeed());
+
+        com.wheelseye.devicegateway.protobuf.Location location1 = LocationMapper.toProto(location);
+        byte[] payload = location1.toByteArray();
+
+        kafkaAdapter.sendMessage("device.sessions", location.getTimestamp().toString(), payload);
         
         // Additional detailed logging
         logger.info("📍 ===== LOCATION DATA RECEIVED =====");
-        logger.info("📍 IMEI: {}", imei);
         logger.info("📍 Source: {}", remoteAddress);
         logger.info("📍 Latitude: {:.6f}", location.getLatitude());
         logger.info("📍 Longitude: {:.6f}", location.getLongitude());
@@ -358,16 +369,16 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     /**
      * Try alternative location parsing methods
      */
-    private void tryAlternativeLocationParsing(MessageFrame frame, String imei) {
+    private void tryAlternativeLocationParsing(MessageFrame frame) {
         try {
-            logger.info("🔍 Trying alternative location parsing for IMEI: {}", imei);
+            logger.info("🔍 Trying alternative location parsing");
             
             ByteBuf content = frame.getContent();
             content.markReaderIndex();
             
             if (content.readableBytes() >= 20) {
                 // Try basic GPS parsing
-                logger.info("🔍 Raw location bytes for IMEI {}: {}", imei, ByteBufUtil.hexDump(content));
+                logger.info("🔍 Raw location bytes: {}", ByteBufUtil.hexDump(content));
                 
                 // Reset reader index
                 content.resetReaderIndex();
@@ -385,13 +396,13 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
                         double lat = latRaw / 1800000.0;
                         double lon = lonRaw / 1800000.0;
                         
-                        logger.info("🔍 Alternative parsing result - IMEI: {}, Raw Lat: {:.6f}, Raw Lon: {:.6f}", 
-                                   imei, lat, lon);
+                        logger.info("🔍 Alternative parsing result - , Raw Lat: {:.6f}, Raw Lon: {:.6f}",
+                                    lat, lon);
                         
                         // If coordinates seem reasonable, log as location
                         if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
-                            logger.info("📍 Received location (alternative parse) - IMEI: {}, Lat: {:.6f}, Lon: {:.6f}, Speed: 0.0 km/h", 
-                                       imei, lat, lon);
+                            logger.info("📍 Received location (alternative parse) , Lat: {:.6f}, Lon: {:.6f}, Speed: 0.0 km/h",
+                                        lat, lon);
                         }
                                    
                     } catch (Exception e) {
@@ -411,23 +422,23 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
      * Handle status packet with configuration advice
      */
     private void handleStatusPacket(ChannelHandlerContext ctx, MessageFrame frame) {
-        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
-        if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No authenticated session for status from {}", ctx.channel().remoteAddress());
-            return;
-        }
+//        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+//        if (sessionOpt.isEmpty()) {
+//            logger.warn("❌ No authenticated session for status from {}", ctx.channel().remoteAddress());
+//            return;
+//        }
 
         try {
-            DeviceSession session = sessionOpt.get();
-            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//            DeviceSession session = sessionOpt.get();
+//            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
             
-            logger.info("📊 Processing status for IMEI: {}", imei);
-            logger.warn("⚠️  STATUS ONLY - IMEI {} not sending location packets", imei);
+//            logger.info("📊 Processing status for IMEI: {}", imei);
+//            logger.warn("⚠️  STATUS ONLY - IMEI {} not sending location packets", imei);
             logger.warn("⚠️  Try: Move device, or SMS 'tracker#123456#' to enable GPS");
             
-            telemetryService.processStatusMessage(session, frame);
-            session.updateActivity();
-            sessionService.saveSession(session);
+//            telemetryService.processStatusMessage(session, frame);
+//            session.updateActivity();
+//            sessionService.saveSession(session);
             sendGenericAck(ctx, frame);
             
         } catch (Exception e) {
@@ -439,21 +450,21 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     // ... (other packet handlers remain the same)
     
     private void handleLBSPacket(ChannelHandlerContext ctx, MessageFrame frame) {
-        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
-        if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No authenticated session for LBS from {}", ctx.channel().remoteAddress());
-            return;
-        }
+//        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+//        if (sessionOpt.isEmpty()) {
+//            logger.warn("❌ No authenticated session for LBS from {}", ctx.channel().remoteAddress());
+//            return;
+//        }
 
         try {
-            DeviceSession session = sessionOpt.get();
-            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//            DeviceSession session = sessionOpt.get();
+//            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
             
-            logger.info("📶 Processing LBS for IMEI: {}", imei);
+//            logger.info("📶 Processing LBS for IMEI: {}", imei);
             
-            telemetryService.processLBSMessage(session, frame);
-            session.updateActivity();
-            sessionService.saveSession(session);
+//            telemetryService.processLBSMessage(session, frame);
+//            session.updateActivity();
+//            sessionService.saveSession(session);
             sendGenericAck(ctx, frame);
             
         } catch (Exception e) {
@@ -463,21 +474,21 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     private void handleVendorMultiPacket(ChannelHandlerContext ctx, MessageFrame frame) {
-        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
-        if (sessionOpt.isEmpty()) {
-            logger.warn("❌ No authenticated session for vendor-multi from {}", ctx.channel().remoteAddress());
-            return;
-        }
+//        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+//        if (sessionOpt.isEmpty()) {
+//            logger.warn("❌ No authenticated session for vendor-multi from {}", ctx.channel().remoteAddress());
+//            return;
+//        }
 
         try {
-            DeviceSession session = sessionOpt.get();
-            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//            DeviceSession session = sessionOpt.get();
+//            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
             
-            logger.info("📦 Processing vendor-multi for IMEI: {}", imei);
+//            logger.info("📦 Processing vendor-multi for IMEI: {}", imei);
             
-            telemetryService.processVendorMultiMessage(session, frame);
-            session.updateActivity();
-            sessionService.saveSession(session);
+//            telemetryService.processVendorMultiMessage(session, frame);
+//            session.updateActivity();
+//            sessionService.saveSession(session);
             sendGenericAck(ctx, frame);
             
         } catch (Exception e) {
@@ -487,65 +498,65 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     }
 
     private void handleHeartbeat(ChannelHandlerContext ctx, MessageFrame frame) {
-        Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
+//        Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
         
-        if (sessionOpt.isPresent()) {
-            DeviceSession session = sessionOpt.get();
-            session.updateActivity();
-            sessionService.saveSession(session);
-            
-            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-            logger.info("💓 Heartbeat from IMEI: {}", imei);
-        } else {
-            logger.info("💓 Heartbeat from unknown session: {}", ctx.channel().remoteAddress());
-        }
+//        if (sessionOpt.isPresent()) {
+//            DeviceSession session = sessionOpt.get();
+//            session.updateActivity();
+//            sessionService.saveSession(session);
+//
+//            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//            logger.info("💓 Heartbeat from IMEI: {}", imei);
+//        } else {
+//            logger.info("💓 Heartbeat from unknown session: {}", ctx.channel().remoteAddress());
+//        }
         
         sendGenericAck(ctx, frame);
     }
 
     private void handleCommandResponse(ChannelHandlerContext ctx, MessageFrame frame) {
-        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
-        if (sessionOpt.isPresent()) {
-            DeviceSession session = sessionOpt.get();
-            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-            logger.info("📤 Command response from IMEI: {} (Serial: {})", imei, frame.getSerialNumber());
-        }
+//        Optional<DeviceSession> sessionOpt = getAuthenticatedSession(ctx);
+//        if (sessionOpt.isPresent()) {
+//            DeviceSession session = sessionOpt.get();
+//            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//            logger.info("📤 Command response from IMEI: {} (Serial: {})", imei, frame.getSerialNumber());
+//        }
         sendGenericAck(ctx, frame);
     }
 
     /**
      * Get authenticated session with enhanced logging
      */
-    private Optional<DeviceSession> getAuthenticatedSession(ChannelHandlerContext ctx) {
-        try {
-            Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
-            
-            if (sessionOpt.isEmpty()) {
-                logger.debug("📭 No session found for channel: {} from {}", 
-                           ctx.channel().id().asShortText(), ctx.channel().remoteAddress());
-                return Optional.empty();
-            }
-            
-            DeviceSession session = sessionOpt.get();
-            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-            
-            if (!session.isAuthenticated()) {
-                logger.warn("🔐 Session exists but NOT authenticated for IMEI: {} from {} - Session ID: {}", 
-                          imei, ctx.channel().remoteAddress(), session.getId());
-                return Optional.empty();
-            }
-            
-            logger.debug("✅ Found authenticated session for IMEI: {} (Session ID: {})", 
-                       imei, session.getId());
-            
-            return sessionOpt;
-            
-        } catch (Exception e) {
-            logger.error("💥 Error getting authenticated session for {}: {}", 
-                       ctx.channel().remoteAddress(), e.getMessage(), e);
-            return Optional.empty();
-        }
-    }
+//    private Optional<DeviceSession> getAuthenticatedSession(ChannelHandlerContext ctx) {
+//        try {
+////            Optional<DeviceSession> sessionOpt = sessionService.getSession(ctx.channel());
+//
+////            if (sessionOpt.isEmpty()) {
+////                logger.debug("📭 No session found for channel: {} from {}",
+////                           ctx.channel().id().asShortText(), ctx.channel().remoteAddress());
+////                return Optional.empty();
+////            }
+////
+////            DeviceSession session = sessionOpt.get();
+////            String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//
+////            if (!session.isAuthenticated()) {
+////                logger.warn("🔐 Session exists but NOT authenticated for IMEI: {} from {} - Session ID: {}",
+////                          imei, ctx.channel().remoteAddress(), session.getId());
+////                return Optional.empty();
+////            }
+//
+//            logger.debug("✅ Found authenticated session for IMEI: {} (Session ID: {})",
+//                       imei, session.getId());
+//
+////            return sessionOpt;
+////
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting authenticated session for {}: {}",
+//                       ctx.channel().remoteAddress(), e.getMessage(), e);
+//            return Optional.empty();
+//        }
+//    }
 
     /**
      * Send ACK with FIXED logging format
@@ -592,7 +603,7 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
         logger.info("🔌 Connection closed: {} (Channel ID: {})", remoteAddress, channelId);
         
         channelRegistry.unregister(channelId);
-        sessionService.removeSession(ctx.channel());
+//        sessionService.removeSession(ctx.channel());
     }
 
     @Override

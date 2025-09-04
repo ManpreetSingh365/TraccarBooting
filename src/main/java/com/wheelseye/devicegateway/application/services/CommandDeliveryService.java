@@ -33,8 +33,8 @@ public class CommandDeliveryService {
     
     private static final Logger logger = LoggerFactory.getLogger(CommandDeliveryService.class);
     
-    @Autowired
-    private DeviceSessionService sessionService;
+//    @Autowired
+//    private DeviceSessionService sessionService;
     
     @Autowired
     private GT06ProtocolParser protocolParser;
@@ -60,37 +60,37 @@ public class CommandDeliveryService {
         
         try {
             // Step 1: Get active session for the IMEI
-            Optional<DeviceSession> sessionOpt = sessionService.getSession(imei);
+//            Optional<DeviceSession> sessionOpt = sessionService.getSession(imei);
             
-            if (!sessionOpt.isPresent()) {
-                logger.warn("❌ No active session found for IMEI: {} to deliver command: {}", 
-                           imei.getValue(), commandType);
-                return;
-            }
+//            if (!sessionOpt.isPresent()) {
+//                logger.warn("❌ No active session found for IMEI: {} to deliver command: {}",
+//                           imei.getValue(), commandType);
+//                return;
+//            }
             
-            DeviceSession session = sessionOpt.get();
+//            DeviceSession session = sessionOpt.get();
             
             // Step 2: Validate session is authenticated
-            if (!session.isAuthenticated()) {
-                logger.warn("❌ Session not authenticated for IMEI: {} to deliver command: {}", 
-                           imei.getValue(), commandType);
-                return;
-            }
+//            if (!session.isAuthenticated()) {
+//                logger.warn("❌ Session not authenticated for IMEI: {} to deliver command: {}",
+//                           imei.getValue(), commandType);
+//                return;
+//            }
             
             // Step 3: Get channel from registry using session's channel ID
-            String channelId = session.getChannelId();
-            if (channelId == null || channelId.isEmpty()) {
-                logger.warn("❌ No channel ID found for IMEI: {} to deliver command: {}", 
-                           imei.getValue(), commandType);
-                return;
-            }
+//            String channelId = session.getChannelId();
+//            if (channelId == null || channelId.isEmpty()) {
+//                logger.warn("❌ No channel ID found for IMEI: {} to deliver command: {}",
+//                           imei.getValue(), commandType);
+//                return;
+//            }
             
-            Channel channel = channelRegistry.get(channelId);
-            if (channel == null || !channel.isActive()) {
-                logger.warn("❌ Channel not active for IMEI: {} (Channel ID: {}) to deliver command: {}", 
-                           imei.getValue(), channelId, commandType);
-                return;
-            }
+//            Channel channel = channelRegistry.get(channelId);
+//            if (channel == null || !channel.isActive()) {
+//                logger.warn("❌ Channel not active for IMEI: {} (Channel ID: {}) to deliver command: {}",
+//                           imei.getValue(), channelId, commandType);
+//                return;
+//            }
             
             // Step 4: Build command frame
             ByteBuf commandFrame = buildCommandFrame(command);
@@ -101,20 +101,20 @@ public class CommandDeliveryService {
             }
             
             // Step 5: Send command with callback
-            channel.writeAndFlush(commandFrame).addListener(future -> {
-                if (future.isSuccess()) {
-                    logger.info("✅ Successfully delivered command '{}' to IMEI: {}", 
-                               commandType, imei.getValue());
-                    
-                    // Update session activity
-                    sessionService.updateActivity(channel);
-                    
-                } else {
-                    String errorMsg = future.cause() != null ? future.cause().getMessage() : "Unknown error";
-                    logger.error("❌ Failed to deliver command '{}' to IMEI: {}: {}", 
-                               commandType, imei.getValue(), errorMsg);
-                }
-            });
+//            channel.writeAndFlush(commandFrame).addListener(future -> {
+//                if (future.isSuccess()) {
+//                    logger.info("✅ Successfully delivered command '{}' to IMEI: {}",
+//                               commandType, imei.getValue());
+//
+//                    // Update session activity
+//                    sessionService.updateActivity(channel);
+//
+//                } else {
+//                    String errorMsg = future.cause() != null ? future.cause().getMessage() : "Unknown error";
+//                    logger.error("❌ Failed to deliver command '{}' to IMEI: {}: {}",
+//                               commandType, imei.getValue(), errorMsg);
+//                }
+//            });
             
         } catch (Exception e) {
             logger.error("💥 Error delivering command '{}' to IMEI: {}: {}", 
@@ -455,49 +455,49 @@ public class CommandDeliveryService {
     /**
      * Check if device is available for commands
      */
-    public boolean isDeviceAvailable(IMEI imei) {
-        try {
-            Optional<DeviceSession> sessionOpt = sessionService.getSession(imei);
-            
-            if (!sessionOpt.isPresent()) {
-                return false;
-            }
-            
-            DeviceSession session = sessionOpt.get();
-            
-            if (!session.isAuthenticated()) {
-                return false;
-            }
-            
-            String channelId = session.getChannelId();
-            return channelId != null && channelRegistry.isChannelActive(channelId);
-            
-        } catch (Exception e) {
-            logger.error("💥 Error checking device availability for IMEI {}: {}", 
-                       imei.getValue(), e.getMessage(), e);
-            return false;
-        }
-    }
+//    public boolean isDeviceAvailable(IMEI imei) {
+//        try {
+////            Optional<DeviceSession> sessionOpt = sessionService.getSession(imei);
+//
+//            if (!sessionOpt.isPresent()) {
+//                return false;
+//            }
+//
+//            DeviceSession session = sessionOpt.get();
+//
+//            if (!session.isAuthenticated()) {
+//                return false;
+//            }
+//
+//            String channelId = session.getChannelId();
+//            return channelId != null && channelRegistry.isChannelActive(channelId);
+//
+//        } catch (Exception e) {
+//            logger.error("💥 Error checking device availability for IMEI {}: {}",
+//                       imei.getValue(), e.getMessage(), e);
+//            return false;
+//        }
+//    }
     
     /**
      * Get command delivery statistics
      */
-    public CommandStats getCommandStats() {
-        try {
-            var sessionStats = sessionService.getSessionStats();
-            int activeChannels = channelRegistry.getActiveChannelCount();
-            
-            return new CommandStats(
-                sessionStats.totalSessions(),
-                sessionStats.authenticatedSessions(),
-                activeChannels,
-                serialCounter - 1
-            );
-        } catch (Exception e) {
-            logger.error("💥 Error getting command stats: {}", e.getMessage(), e);
-            return new CommandStats(0, 0, 0, 0);
-        }
-    }
+//    public CommandStats getCommandStats() {
+//        try {
+//            var sessionStats = sessionService.getSessionStats();
+//            int activeChannels = channelRegistry.getActiveChannelCount();
+//
+//            return new CommandStats(
+//                sessionStats.totalSessions(),
+//                sessionStats.authenticatedSessions(),
+//                activeChannels,
+//                serialCounter - 1
+//            );
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting command stats: {}", e.getMessage(), e);
+//            return new CommandStats(0, 0, 0, 0);
+//        }
+//    }
     
     /**
      * Command statistics record

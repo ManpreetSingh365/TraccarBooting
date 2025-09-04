@@ -21,50 +21,36 @@ import com.wheelseye.devicegateway.domain.valueobjects.IMEI;
 @RequestMapping("/api/v1/devices")
 public class DeviceController {
     
-    private final DeviceSessionService deviceSessionService;
+
     private final ModelMapper modelMapper;
     
     public DeviceController(DeviceSessionService deviceSessionService, ModelMapper modelMapper) {
-        this.deviceSessionService = deviceSessionService;
         this.modelMapper = modelMapper;
     }
     
     @GetMapping("/sessions")
-    public ResponseEntity<Collection<DeviceSessionDto>> getAllSessions() {
-        Collection<DeviceSession> sessions = deviceSessionService.getAllSessions();
-        Collection<DeviceSessionDto> sessionDtos = sessions.stream()
-            .map(session -> modelMapper.map(session, DeviceSessionDto.class))
-            .collect(java.util.stream.Collectors.toList());
+    public ResponseEntity<String> getAllSessions() {
         
-        return ResponseEntity.ok(sessionDtos);
+        return ResponseEntity.ok("OK");
     }
     
     @GetMapping("/{imei}/session")
-    public ResponseEntity<DeviceSessionDto> getSessionByImei(@PathVariable String imei) {
+    public ResponseEntity<String> getSessionByImei(@PathVariable String imei) {
         try {
             IMEI deviceImei = new IMEI(imei);
-            Optional<DeviceSession> session = deviceSessionService.getSession(deviceImei);
             
-            if (session.isPresent()) {
-                return ResponseEntity.ok(modelMapper.map(session.get(), DeviceSessionDto.class));
-            } else {
-                return ResponseEntity.notFound().build();
-            }
+            return ResponseEntity.ok("OK");
+
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }
     }
     
     @GetMapping("/health")
-    public ResponseEntity<Map<String, Object>> getHealth() {
-        Map<String, Object> health = new HashMap<>();
-        Collection<DeviceSession> sessions = deviceSessionService.getAllSessions();
+    public ResponseEntity<String> getHealth() {
+
         
-        health.put("status", "UP");
-        health.put("activeSessions", sessions.size());
-        health.put("timestamp", java.time.Instant.now().toString());
-        
-        return ResponseEntity.ok(health);
+        return ResponseEntity.ok("health");
     }
     
     @GetMapping("/")

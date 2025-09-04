@@ -18,12 +18,11 @@ import java.util.Map;
 public class TelemetryProcessingService {
     
     private static final Logger logger = LoggerFactory.getLogger(TelemetryProcessingService.class);
-    
-    private final EventPublisher eventPublisher;
+
     private final GT06ProtocolParser protocolParser;
     
-    public TelemetryProcessingService(EventPublisher eventPublisher, GT06ProtocolParser protocolParser) {
-        this.eventPublisher = eventPublisher;
+    public TelemetryProcessingService(GT06ProtocolParser protocolParser) {
+
         this.protocolParser = protocolParser;
     }
     
@@ -44,8 +43,7 @@ public class TelemetryProcessingService {
                     attributes,
                     frame.getRawHex()
                 );
-                
-                eventPublisher.publishTelemetryEvent(event);
+
                 
                 logger.debug("Processed location message for IMEI: {} - Lat: {}, Lon: {}", 
                            session.getImei().getValue(), location.getLatitude(), location.getLongitude());
@@ -78,17 +76,9 @@ public class TelemetryProcessingService {
             
             content.resetReaderIndex();
             
-            TelemetryEvent event = new TelemetryEvent(
-                session.getImei(),
-                "STATUS",
-                null, // no location in status message
-                null, // battery level calculation could be added
-                "unknown",
-                attributes,
-                frame.getRawHex()
-            );
+
             
-            eventPublisher.publishTelemetryEvent(event);
+
             
             logger.debug("Processed status message for IMEI: {}", session.getImei().getValue());
             
@@ -125,17 +115,9 @@ public class TelemetryProcessingService {
                 content.resetReaderIndex();
             }
             
-            TelemetryEvent event = new TelemetryEvent(
-                session.getImei(),
-                "LBS",
-                null, // LBS doesn't contain GPS location
-                null,
-                "lbs",
-                attributes,
-                frame.getRawHex()
-            );
+
             
-            eventPublisher.publishTelemetryEvent(event);
+
             
             logger.debug("Processed LBS message for IMEI: {}", session.getImei().getValue());
             
@@ -163,8 +145,6 @@ public class TelemetryProcessingService {
                 attributes,
                 frame.getRawHex()
             );
-            
-            eventPublisher.publishTelemetryEvent(event);
             
             logger.debug("Processed vendor multi message for IMEI: {}", session.getImei().getValue());
             

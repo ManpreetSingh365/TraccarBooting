@@ -1,6 +1,5 @@
 package com.wheelseye.devicegateway.infrastructure.netty;
 
-import com.wheelseye.devicegateway.application.services.DeviceSessionService;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -14,8 +13,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -35,11 +34,11 @@ public class NettyTcpServer {
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     
-    private final DeviceSessionService sessionService;
+//    private final DeviceSessionService sessionService;
     private final GT06Handler gt06Handler;
 
-    public NettyTcpServer(DeviceSessionService sessionService, GT06Handler gt06Handler) {
-        this.sessionService = sessionService;
+    public NettyTcpServer( GT06Handler gt06Handler) {
+//        this.sessionService = sessionService;
         this.gt06Handler = gt06Handler;
     }
 

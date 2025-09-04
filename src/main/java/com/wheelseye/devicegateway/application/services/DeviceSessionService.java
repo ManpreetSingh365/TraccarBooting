@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import com.wheelseye.devicegateway.domain.entities.DeviceSession;
 import com.wheelseye.devicegateway.domain.valueobjects.IMEI;
-import com.wheelseye.devicegateway.infrastructure.persistence.RedisSessionRepository;
 
 import io.netty.channel.Channel;
 
@@ -31,9 +30,7 @@ import io.netty.channel.Channel;
 public class DeviceSessionService {
     
     private static final Logger logger = LoggerFactory.getLogger(DeviceSessionService.class);
-    
-    @Autowired
-    private RedisSessionRepository sessionRepository;
+
     
     @Value("${device-gateway.session.idle-timeout:600}")
     private int sessionIdleTimeoutSeconds;
@@ -47,16 +44,16 @@ public class DeviceSessionService {
     public DeviceSession createSession(IMEI imei, Channel channel) {
         try {
             // Check if session already exists for this IMEI
-            Optional<DeviceSession> existingSession = sessionRepository.findByImei(imei);
-            if (existingSession.isPresent()) {
-                DeviceSession existing = existingSession.get();
-                logger.info("📱 Reusing existing session for IMEI: {} -> Session: {} (authenticated: {})", 
-                          imei.getValue(), existing.getId(), existing.isAuthenticated());
-                
-                // Update channel info for existing session
-                updateSessionChannel(existing, channel);
-                return existing;
-            }
+//            Optional<DeviceSession> existingSession = sessionRepository.findByImei(imei);
+//            if (existingSession.isPresent()) {
+//                DeviceSession existing = existingSession.get();
+//                logger.info("📱 Reusing existing session for IMEI: {} -> Session: {} (authenticated: {})",
+//                          imei.getValue(), existing.getId(), existing.isAuthenticated());
+//
+//                // Update channel info for existing session
+//                updateSessionChannel(existing, channel);
+//                return existing;
+//            }
             
             // Create new session
             String sessionId = UUID.randomUUID().toString();
@@ -70,7 +67,7 @@ public class DeviceSessionService {
             }
             
             // Save to repository (but not authenticated yet)
-            sessionRepository.save(session);
+//            sessionRepository.save(session);
             
             logger.info("✨ Created new session - IMEI: {} -> Session: {} -> Channel: {} (authenticated: {})", 
                        imei.getValue(), sessionId, session.getChannelId(), session.isAuthenticated());
@@ -94,8 +91,8 @@ public class DeviceSessionService {
                 return;
             }
             
-            sessionRepository.save(session);
-            
+//            sessionRepository.save(session);
+
             logger.debug("💾 Session saved: {} (IMEI: {}, authenticated: {}, channel: {})", 
                        session.getId(), 
                        session.getImei() != null ? session.getImei().getValue() : "unknown",
@@ -112,86 +109,86 @@ public class DeviceSessionService {
     /**
      * Get session by channel with enhanced logging for debugging
      */
-    public Optional<DeviceSession> getSession(Channel channel) {
-        if (channel == null) {
-            logger.warn("⚠️ Attempt to get session with null channel");
-            return Optional.empty();
-        }
-        
-        try {
-            String channelId = channel.id().asShortText();
-            String remoteAddress = channel.remoteAddress() != null ? 
-                                 channel.remoteAddress().toString() : "unknown";
-            
-            Optional<DeviceSession> sessionOpt = sessionRepository.findByChannel(channel);
-            
-            if (sessionOpt.isPresent()) {
-                DeviceSession session = sessionOpt.get();
-                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-                
-                logger.debug("✅ Found session for channel {} ({}): {} (IMEI: {}, authenticated: {})", 
-                           channelId, remoteAddress, session.getId(), imei, session.isAuthenticated());
-                           
-                return sessionOpt;
-            } else {
-                logger.debug("📭 No session found for channel: {} ({})", channelId, remoteAddress);
-                return Optional.empty();
-            }
-            
-        } catch (Exception e) {
-            logger.error("💥 Error getting session for channel {}: {}", 
-                       channel.id().asShortText(), e.getMessage(), e);
-            return Optional.empty();
-        }
-    }
+//    public Optional<DeviceSession> getSession(Channel channel) {
+//        if (channel == null) {
+//            logger.warn("⚠️ Attempt to get session with null channel");
+//            return Optional.empty();
+//        }
+//
+//        try {
+//            String channelId = channel.id().asShortText();
+//            String remoteAddress = channel.remoteAddress() != null ?
+//                                 channel.remoteAddress().toString() : "unknown";
+//
+////            Optional<DeviceSession> sessionOpt = sessionRepository.findByChannel(channel);
+//
+////            if (sessionOpt.isPresent()) {
+////                DeviceSession session = sessionOpt.get();
+////                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+////
+////                logger.debug("✅ Found session for channel {} ({}): {} (IMEI: {}, authenticated: {})",
+////                           channelId, remoteAddress, session.getId(), imei, session.isAuthenticated());
+////
+////                return sessionOpt;
+////            } else {
+////                logger.debug("📭 No session found for channel: {} ({})", channelId, remoteAddress);
+////                return Optional.empty();
+////            }
+//
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting session for channel {}: {}",
+//                       channel.id().asShortText(), e.getMessage(), e);
+//            return Optional.empty();
+//        }
+//    }
     
     /**
      * Get session by IMEI with enhanced logging
      */
-    public Optional<DeviceSession> getSession(IMEI imei) {
-        try {
-            Optional<DeviceSession> sessionOpt = sessionRepository.findByImei(imei);
-            
-            if (sessionOpt.isPresent()) {
-                DeviceSession session = sessionOpt.get();
-                
-                logger.debug("✅ Found session for IMEI {}: {} (authenticated: {}, channel: {})", 
-                           imei.getValue(), session.getId(), session.isAuthenticated(), session.getChannelId());
-                           
-                return sessionOpt;
-            } else {
-                logger.debug("📭 No session found for IMEI: {}", imei.getValue());
-                return Optional.empty();
-            }
-            
-        } catch (Exception e) {
-            logger.error("💥 Error getting session for IMEI {}: {}", imei.getValue(), e.getMessage(), e);
-            return Optional.empty();
-        }
-    }
+//    public Optional<DeviceSession> getSession(IMEI imei) {
+//        try {
+////            Optional<DeviceSession> sessionOpt = sessionRepository.findByImei(imei);
+//
+//            if (sessionOpt.isPresent()) {
+//                DeviceSession session = sessionOpt.get();
+//
+//                logger.debug("✅ Found session for IMEI {}: {} (authenticated: {}, channel: {})",
+//                           imei.getValue(), session.getId(), session.isAuthenticated(), session.getChannelId());
+//
+////                return sessionOpt;
+//            } else {
+//                logger.debug("📭 No session found for IMEI: {}", imei.getValue());
+//                return Optional.empty();
+//            }
+//
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting session for IMEI {}: {}", imei.getValue(), e.getMessage(), e);
+//            return Optional.empty();
+//        }
+//    }
     
     /**
      * Get session by ID with enhanced logging
      */
-    public Optional<DeviceSession> getSession(String sessionId) {
-        try {
-            Optional<DeviceSession> sessionOpt = sessionRepository.findById(sessionId);
-            
-            if (sessionOpt.isPresent()) {
-                DeviceSession session = sessionOpt.get();
-                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-                logger.debug("✅ Found session by ID: {} (IMEI: {}, authenticated: {})", 
-                           sessionId, imei, session.isAuthenticated());
-            } else {
-                logger.debug("📭 No session found for ID: {}", sessionId);
-            }
-            
-            return sessionOpt;
-        } catch (Exception e) {
-            logger.error("💥 Error getting session by ID {}: {}", sessionId, e.getMessage(), e);
-            return Optional.empty();
-        }
-    }
+//    public Optional<DeviceSession> getSession(String sessionId) {
+//        try {
+////            Optional<DeviceSession> sessionOpt = sessionRepository.findById(sessionId);
+//
+//            if (sessionOpt.isPresent()) {
+//                DeviceSession session = sessionOpt.get();
+//                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//                logger.debug("✅ Found session by ID: {} (IMEI: {}, authenticated: {})",
+//                           sessionId, imei, session.isAuthenticated());
+//            } else {
+//                logger.debug("📭 No session found for ID: {}", sessionId);
+//            }
+//
+//            return sessionOpt;
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting session by ID {}: {}", sessionId, e.getMessage(), e);
+//            return Optional.empty();
+//        }
+//    }
     
     /**
      * Remove session with proper cleanup
@@ -203,19 +200,19 @@ public class DeviceSessionService {
         }
         
         try {
-            Optional<DeviceSession> sessionOpt = sessionRepository.findByChannel(channel);
+//            Optional<DeviceSession> sessionOpt = sessionRepository.findByChannel(channel);
             
-            if (sessionOpt.isPresent()) {
-                DeviceSession session = sessionOpt.get();
-                sessionRepository.delete(session.getId());
-                
-                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-                logger.info("🗑️ Removed session for channel {}: {} (IMEI: {}, was authenticated: {})", 
-                          channel.id().asShortText(), session.getId(), imei, session.isAuthenticated());
-            } else {
-                logger.debug("📭 No session found to remove for channel: {}", 
-                           channel.id().asShortText());
-            }
+//            if (sessionOpt.isPresent()) {
+//                DeviceSession session = sessionOpt.get();
+////                sessionRepository.delete(session.getId());
+//
+//                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//                logger.info("🗑️ Removed session for channel {}: {} (IMEI: {}, was authenticated: {})",
+//                          channel.id().asShortText(), session.getId(), imei, session.isAuthenticated());
+//            } else {
+//                logger.debug("📭 No session found to remove for channel: {}",
+//                           channel.id().asShortText());
+//            }
             
         } catch (Exception e) {
             logger.error("💥 Error removing session for channel {}: {}", 
@@ -228,15 +225,15 @@ public class DeviceSessionService {
      */
     public void removeSession(String sessionId) {
         try {
-            Optional<DeviceSession> sessionOpt = sessionRepository.findById(sessionId);
-            if (sessionOpt.isPresent()) {
-                DeviceSession session = sessionOpt.get();
-                sessionRepository.delete(sessionId);
-                
-                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-                logger.info("🗑️ Removed session: {} (IMEI: {}, was authenticated: {})", 
-                          sessionId, imei, session.isAuthenticated());
-            }
+//            Optional<DeviceSession> sessionOpt = sessionRepository.findById(sessionId);
+//            if (sessionOpt.isPresent()) {
+//                DeviceSession session = sessionOpt.get();
+//                sessionRepository.delete(sessionId);
+//
+//                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//                logger.info("🗑️ Removed session: {} (IMEI: {}, was authenticated: {})",
+//                          sessionId, imei, session.isAuthenticated());
+//            }
         } catch (Exception e) {
             logger.error("💥 Error removing session {}: {}", sessionId, e.getMessage(), e);
         }
@@ -245,44 +242,44 @@ public class DeviceSessionService {
     /**
      * Update session activity and save - ENHANCED with persistence
      */
-    public void updateActivity(Channel channel) {
-        if (channel == null) return;
-        
-        try {
-            Optional<DeviceSession> sessionOpt = getSession(channel);
-            if (sessionOpt.isPresent()) {
-                DeviceSession session = sessionOpt.get();
-                session.updateActivity();
-                
-                // CRITICAL: Save the updated session back to repository
-                sessionRepository.save(session);
-                
-                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-                logger.debug("⏰ Updated activity for session: {} (IMEI: {}, authenticated: {})", 
-                           session.getId(), imei, session.isAuthenticated());
-            }
-        } catch (Exception e) {
-            logger.error("💥 Error updating activity for channel {}: {}", 
-                       channel.id().asShortText(), e.getMessage(), e);
-        }
-    }
+//    public void updateActivity(Channel channel) {
+//        if (channel == null) return;
+//
+//        try {
+//            Optional<DeviceSession> sessionOpt = getSession(channel);
+//            if (sessionOpt.isPresent()) {
+//                DeviceSession session = sessionOpt.get();
+//                session.updateActivity();
+//
+//                // CRITICAL: Save the updated session back to repository
+////                sessionRepository.save(session);
+//
+//                String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//                logger.debug("⏰ Updated activity for session: {} (IMEI: {}, authenticated: {})",
+//                           session.getId(), imei, session.isAuthenticated());
+//            }
+//        } catch (Exception e) {
+//            logger.error("💥 Error updating activity for channel {}: {}",
+//                       channel.id().asShortText(), e.getMessage(), e);
+//        }
+//    }
     
     /**
      * Get all active sessions with authentication status
      */
-    public List<DeviceSession> getAllSessions() {
-        try {
-            List<DeviceSession> sessions = sessionRepository.findAll();
-            long authenticatedCount = sessions.stream().mapToLong(s -> s.isAuthenticated() ? 1 : 0).sum();
-            
-            logger.debug("📊 Retrieved {} active sessions ({} authenticated, {} unauthenticated)", 
-                       sessions.size(), authenticatedCount, sessions.size() - authenticatedCount);
-            return sessions;
-        } catch (Exception e) {
-            logger.error("💥 Error getting all sessions: {}", e.getMessage(), e);
-            return List.of();
-        }
-    }
+//    public List<DeviceSession> getAllSessions() {
+//        try {
+////            List<DeviceSession> sessions = sessionRepository.findAll();
+//            long authenticatedCount = sessions.stream().mapToLong(s -> s.isAuthenticated() ? 1 : 0).sum();
+//
+//            logger.debug("📊 Retrieved {} active sessions ({} authenticated, {} unauthenticated)",
+//                       sessions.size(), authenticatedCount, sessions.size() - authenticatedCount);
+//            return sessions;
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting all sessions: {}", e.getMessage(), e);
+//            return List.of();
+//        }
+//    }
     
     /**
      * Scheduled cleanup of idle sessions
@@ -290,34 +287,34 @@ public class DeviceSessionService {
     @Scheduled(fixedRateString = "${device-gateway.session.cleanup-interval:60}000")
     public void cleanupIdleSessions() {
         try {
-            List<DeviceSession> idleSessions = sessionRepository.findIdleSessions(sessionIdleTimeoutSeconds);
+//            List<DeviceSession> idleSessions = sessionRepository.findIdleSessions(sessionIdleTimeoutSeconds);
             
             int cleanedUp = 0;
-            for (DeviceSession session : idleSessions) {
-                try {
-                    sessionRepository.delete(session.getId());
-                    cleanedUp++;
-                    
-                    String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
-                    logger.debug("🧹 Cleaned up idle session: {} (IMEI: {}, was authenticated: {}, idle: {}s)", 
-                               session.getId(), imei, session.isAuthenticated(), session.getIdleTimeSeconds());
-                               
-                } catch (Exception e) {
-                    logger.error("💥 Error cleaning up session {}: {}", session.getId(), e.getMessage());
-                }
-            }
+//            for (DeviceSession session : idleSessions) {
+//                try {
+//                    sessionRepository.delete(session.getId());
+//                    cleanedUp++;
+//
+//                    String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
+//                    logger.debug("🧹 Cleaned up idle session: {} (IMEI: {}, was authenticated: {}, idle: {}s)",
+//                               session.getId(), imei, session.isAuthenticated(), session.getIdleTimeSeconds());
+//
+//                } catch (Exception e) {
+//                    logger.error("💥 Error cleaning up session {}: {}", session.getId(), e.getMessage());
+//                }
+//            }
             
             if (cleanedUp > 0) {
                 logger.info("🧹 Cleaned up {} idle sessions", cleanedUp);
             }
             
             // Log session statistics
-            List<DeviceSession> activeSessions = getAllSessions();
-            if (!activeSessions.isEmpty()) {
-                long authenticated = activeSessions.stream().mapToLong(s -> s.isAuthenticated() ? 1 : 0).sum();
-                logger.debug("📊 Session stats - Active: {}, Authenticated: {}, Cleaned: {}", 
-                           activeSessions.size(), authenticated, cleanedUp);
-            }
+//            List<DeviceSession> activeSessions = getAllSessions();
+//            if (!activeSessions.isEmpty()) {
+//                long authenticated = activeSessions.stream().mapToLong(s -> s.isAuthenticated() ? 1 : 0).sum();
+//                logger.debug("📊 Session stats - Active: {}, Authenticated: {}, Cleaned: {}",
+//                           activeSessions.size(), authenticated, cleanedUp);
+//            }
             
         } catch (Exception e) {
             logger.error("💥 Error during session cleanup: {}", e.getMessage(), e);
@@ -339,7 +336,7 @@ public class DeviceSessionService {
                 session.updateActivity();
                 
                 // CRITICAL: Save the updated session
-                sessionRepository.save(session);
+//                sessionRepository.save(session);
                 
                 String imei = session.getImei() != null ? session.getImei().getValue() : "unknown";
                 logger.debug("🔄 Updated channel info for session {}: {} -> {} (IMEI: {}, authenticated: {})", 
@@ -353,20 +350,20 @@ public class DeviceSessionService {
     /**
      * Get session statistics with detailed authentication info
      */
-    public SessionStats getSessionStats() {
-        try {
-            List<DeviceSession> sessions = getAllSessions();
-            long authenticatedCount = sessions.stream()
-                .mapToLong(s -> s.isAuthenticated() ? 1 : 0)
-                .sum();
-            
-            return new SessionStats(sessions.size(), (int) authenticatedCount, 
-                                  sessions.size() - (int) authenticatedCount);
-        } catch (Exception e) {
-            logger.error("💥 Error getting session stats: {}", e.getMessage(), e);
-            return new SessionStats(0, 0, 0);
-        }
-    }
+//    public SessionStats getSessionStats() {
+//        try {
+////            List<DeviceSession> sessions = getAllSessions();
+//            long authenticatedCount = sessions.stream()
+//                .mapToLong(s -> s.isAuthenticated() ? 1 : 0)
+//                .sum();
+//
+//            return new SessionStats(sessions.size(), (int) authenticatedCount,
+//                                  sessions.size() - (int) authenticatedCount);
+//        } catch (Exception e) {
+//            logger.error("💥 Error getting session stats: {}", e.getMessage(), e);
+//            return new SessionStats(0, 0, 0);
+//        }
+//    }
     
     /**
      * Session statistics record
