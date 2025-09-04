@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package com.wheelseye.devicegateway;
+
+option java_package = "com.wheelseye.devicegateway.protobuf";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "device.proto"; // import the existing IMEI definition
+
+// DeviceSession message
+message DeviceSession {
+  string id = 1;
+  IMEI imei = 2;                     // Use IMEI from device.proto
+  string channel_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp last_activity_at = 5;
+  bool authenticated = 6;
+  string remote_address = 7;
+  map<string, string> attributes = 8; // map instead of repeated Attribute
+}

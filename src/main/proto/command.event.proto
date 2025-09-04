@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package com.wheelseye.devicegateway;
+
+option java_package = "com.wheelseye.devicegateway.protobuf";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto"; // for parameters map
+import "device.proto"; // IMEI message
+
+message CommandEvent {
+  string command_id = 1;                         // Unique command ID
+  IMEI imei = 2;                                 // Device identifier
+  string command = 3;                            // Command text
+  map<string, google.protobuf.Value> parameters = 4; // Arbitrary parameters
+  string priority = 5;                           // Priority level
+  int32 retry_count = 6;                         // Current retry count
+  int32 max_retries = 7;                         // Max retries allowed
+  google.protobuf.Timestamp timestamp = 8;       // Event timestamp
+}

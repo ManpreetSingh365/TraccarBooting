@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import com.wheelseye.devicegateway.adapters.messaging.KafkaAdapter;
 import com.wheelseye.devicegateway.application.services.DeviceSessionService;
 import com.wheelseye.devicegateway.application.services.TelemetryProcessingService;
 import com.wheelseye.devicegateway.domain.entities.DeviceSession;
@@ -25,6 +26,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
+import com.wheelseye.devicegateway.domain.mappers.DeviceSessionMapper;
 
 /**
  * FINAL FIX - GT06 Handler - VARIANT PERSISTENCE ISSUE RESOLVED
@@ -76,6 +78,12 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
     private static final int MSG_LBS_PHONE = 0x17;
     private static final int MSG_LBS_EXTEND = 0x18;
     private static final int MSG_GPS_DOG = 0x32;
+
+     private final KafkaAdapter kafkaAdapter;
+
+    public GT06Handler(KafkaAdapter kafkaAdapter){
+        this.kafkaAdapter = kafkaAdapter;
+    }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
@@ -235,6 +243,9 @@ public class GT06Handler extends ChannelInboundHandlerAdapter {
 
             // Save session BEFORE sending ACK to ensure persistence
             sessionService.saveSession(session);
+            String sid = session.getId();
+            
+            kafkaAdapter.sendMessage("device.sessions", sid, DeviceSessionMapper.toProto(session).toByteArray());
 
             // Verify the save worked
             Optional<DeviceSession> savedSession = sessionService.getSession(ctx.channel());

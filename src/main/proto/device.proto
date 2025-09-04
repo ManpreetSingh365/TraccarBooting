@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package  com.wheelseye.devicegateway;
+
+option java_package = "com.wheelseye.devicegateway.protobuf";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+// Enum for Device Status
+enum DeviceStatus {
+  DEVICE_STATUS_UNKNOWN = 0;
+  DEVICE_STATUS_NEW = 1;
+  DEVICE_STATUS_ACTIVE = 2;
+  DEVICE_STATUS_INACTIVE = 3;
+}
+
+message IMEI {
+  string value = 1;
+}
+
+// Device message
+message Device {
+  IMEI imei = 1;
+  DeviceStatus status = 2;
+  string model = 3;
+  string firmware_version = 4;
+  google.protobuf.Timestamp last_seen = 5;
+  string ip_address = 6;
+}

@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package com.wheelseye.devicegateway;
+
+option java_package = "com.wheelseye.devicegateway.protobuf";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto"; // For attributes map
+import "device.proto";                // For IMEI
+import "location.proto";              // Your actual Location message
+
+message TelemetryEvent {
+  IMEI imei = 1;                                     // Device IMEI
+  string message_type = 2;                           // Message type (e.g., LOCATION, HEARTBEAT)
+  Location location = 3;                             // GPS location
+  int32 battery_level = 4;                           // Battery level
+  string gps_signal_strength = 5;                    // GPS signal quality
+  map<string, google.protobuf.Value> attributes = 6; // Arbitrary attributes
+  string raw_frame = 7;                              // Raw device frame data
+  google.protobuf.Timestamp timestamp = 8;           // Event timestamp
+}
